@@ -3,7 +3,7 @@
 [![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen.svg?logo=springboot)](#) [![WebSocket](https://img.shields.io/badge/WebSocket-RealTime-yellow.svg)](#) [![Java](https://img.shields.io/badge/Java-17-orange.svg?logo=java)](#)
 
 ## 📌 프로젝트 개요
-**실시간 전술 객체 추적 시스템(MSA)**의 핵심 비즈니스 로직을 담당하는 마이크로서비스입니다. 
+실시간 전술 객체 추적 시스템(MSA)의 핵심 비즈니스 로직을 담당하는 마이크로서비스입니다. 
 
 레이더, 드론 등 다양한 센서로부터 유입되는 **대규모 위치 데이터(위도, 경도, 고도, 속도)를 실시간으로 수집 및 가공**하고, 이를 지휘통제실의 프론트엔드 대시보드로 즉각 전송하여 시각화할 수 있도록 지원하는 고성능 데이터 처리 백엔드입니다.
 
@@ -20,7 +20,7 @@
 * 노드(서버) 장애 발생 시에도 다른 노드에서 즉각적으로 트래픽을 넘겨받아, 전술 데이터의 유실 없이 시스템이 지속적으로 운영되는 무중단(Zero-Downtime) 환경을 염두에 두고 설계되었습니다.
 
 ## 🛠 기술 스택 (Tech Stack)
-* **Framework:** Java 17, Spring Boot 3.x, Spring WebSockets
+* **Framework:** Java 21, Spring Boot 3.5.11, Spring WebSockets
 * **Database:** PostgreSQL / Redis (도입 예정)
 * **Infra:** K3s (Kubernetes), Docker
 
