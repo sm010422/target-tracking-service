@@ -16,6 +16,10 @@ spring:
       hibernate:
         format_sql: true
 
+  output:
+    ansi:
+      enabled: ALWAYS
+
   kafka:
     bootstrap-servers: localhost:9092
     consumer:
@@ -24,6 +28,9 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+logging:
+  exception-conversion-word: "%wEx{0}"
 
 server:
   port: 8080
