@@ -4,8 +4,8 @@ spring:
     
   datasource:
     url: jdbc:postgresql://localhost:5432/defense_db
-    username: postgres
-    password: password
+    username: defense
+    password: defense_password
     driver-class-name: org.postgresql.Driver
 
   jpa:
