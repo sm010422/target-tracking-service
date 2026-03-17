@@ -3,84 +3,199 @@
 <head>
     <meta charset="UTF-8">
     <title>C4I 지휘통제 대시보드</title>
+
+    <!-- Leaflet 지도 -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- WebSocket -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+
     <style>
-        body {
-            background: #0a0a0a;
-            color: #00ff41;
-            font-family: monospace;
-            padding: 20px;
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0a; color: #00ff41; font-family: monospace; }
+
+        #header {
+            padding: 10px 20px;
+            background: #001a00;
+            border-bottom: 1px solid #00ff41;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
         }
-        h1 { color: #00ff41; border-bottom: 1px solid #00ff41; }
-        #status { color: #ffff00; margin-bottom: 10px; }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
+        #header h1 { font-size: 18px; }
+        #status { font-size: 13px; }
+
+        #container {
+            display: flex;
+            height: calc(100vh - 45px);
         }
-        th, td {
+
+        #map {
+            flex: 1;
+            filter: hue-rotate(200deg) saturate(0.5) brightness(0.7);
+        }
+
+        #sidebar {
+            width: 300px;
+            background: #001a00;
+            border-left: 1px solid #00ff41;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        #sidebar h2 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            border-bottom: 1px solid #00ff41;
+            padding-bottom: 5px;
+        }
+
+        .target-card {
             border: 1px solid #00ff41;
-            padding: 8px 12px;
-            text-align: left;
+            padding: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            line-height: 1.8;
         }
-        th { background: #001a00; }
-        tr:hover { background: #001a00; }
-        .detected { color: #00ff41; }
+
+        .target-card .id {
+            font-size: 14px;
+            font-weight: bold;
+            color: #ffff00;
+        }
+
+        #log {
+            margin-top: 10px;
+            font-size: 11px;
+            color: #008f11;
+            height: 150px;
+            overflow-y: auto;
+            border-top: 1px solid #00ff41;
+            padding-top: 5px;
+        }
     </style>
 </head>
 <body>
-    <h1>📡 C4I 실시간 전술 대시보드</h1>
+
+<div id="header">
+    <h1>📡 C4I 실시간 전술 지휘통제 대시보드</h1>
     <div id="status">🔴 연결 중...</div>
-    <table>
-        <thead>
-            <tr>
-                <th>ID</th>
-                <th>타입</th>
-                <th>위도</th>
-                <th>경도</th>
-                <th>고도(m)</th>
-                <th>속도(km/h)</th>
-                <th>상태</th>
-            </tr>
-        </thead>
-        <tbody id="target-table"></tbody>
-    </table>
+</div>
 
-    <script>
-        const targets = {};
+<div id="container">
+    <div id="map"></div>
+    <div id="sidebar">
+        <h2>🎯 탐지 표적 현황</h2>
+        <div id="target-list"></div>
+        <div id="log"></div>
+    </div>
+</div>
 
-        const socket = new SockJS('/ws');
-        const stompClient = Stomp.over(socket);
+<script>
+    // 지도 초기화 (한반도 중심)
+    const map = L.map('map').setView([36.5, 127.5], 7);
 
-        stompClient.connect({}, function(frame) {
-            document.getElementById('status').innerHTML = '🟢 연결됨';
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: 'OpenStreetMap'
+    }).addTo(map);
 
-            stompClient.subscribe('/topic/targets', function(message) {
-                const target = JSON.parse(message.body);
-                targets[target.targetId] = target;
-                renderTable();
-            });
-        }, function(error) {
-            document.getElementById('status').innerHTML = '🔴 연결 끊김: ' + error;
+    // 드론 아이콘
+    const droneIcon = L.divIcon({
+        html: '✈️',
+        className: '',
+        iconSize: [24, 24],
+        iconAnchor: [12, 12]
+    });
+
+    const targets = {};   // 마커 저장
+    const paths = {};     // 경로선 저장
+    const coords = {};    // 좌표 이력
+
+    // WebSocket 연결
+    const socket = new SockJS('/ws');
+    const stompClient = Stomp.over(socket);
+    stompClient.debug = null; // 콘솔 로그 제거
+
+    stompClient.connect({}, function () {
+        document.getElementById('status').innerHTML = '🟢 연결됨 | SYSTEM ONLINE';
+
+        stompClient.subscribe('/topic/targets', function (message) {
+            const t = JSON.parse(message.body);
+            updateTarget(t);
         });
+    }, function () {
+        document.getElementById('status').innerHTML = '🔴 연결 끊김';
+    });
 
-        function renderTable() {
-            const tbody = document.getElementById('target-table');
-            tbody.innerHTML = '';
-            Object.values(targets).forEach(t => {
-                tbody.innerHTML += `
-                    <tr>
-                        <td>${t.targetId}</td>
-                        <td>${t.targetType}</td>
-                        <td>${t.latitude.toFixed(5)}</td>
-                        <td>${t.longitude.toFixed(5)}</td>
-                        <td>${t.altitude.toFixed(1)}</td>
-                        <td>${t.speed.toFixed(1)}</td>
-                        <td class="detected">${t.status}</td>
-                    </tr>`;
-            });
+    function updateTarget(t) {
+        const lat = t.latitude;
+        const lng = t.longitude;
+
+        // 마커 업데이트
+        if (targets[t.targetId]) {
+            targets[t.targetId].setLatLng([lat, lng]);
+            targets[t.targetId].setTooltipContent(
+                `${t.targetId}<br>고도: ${t.altitude.toFixed(0)}m<br>속도: ${t.speed.toFixed(0)}km/h`
+            );
+        } else {
+            // 새 마커 생성
+            const marker = L.marker([lat, lng], { icon: droneIcon })
+                .addTo(map)
+                .bindTooltip(
+                    `${t.targetId}<br>고도: ${t.altitude.toFixed(0)}m<br>속도: ${t.speed.toFixed(0)}km/h`,
+                    { permanent: true, className: 'drone-tooltip' }
+                );
+            targets[t.targetId] = marker;
+            coords[t.targetId] = [];
         }
-    </script>
+
+        // 경로 업데이트
+        coords[t.targetId].push([lat, lng]);
+        if (coords[t.targetId].length > 20) {
+            coords[t.targetId].shift(); // 최근 20개만 유지
+        }
+
+        if (paths[t.targetId]) {
+            map.removeLayer(paths[t.targetId]);
+        }
+        paths[t.targetId] = L.polyline(coords[t.targetId], {
+            color: '#00ff41',
+            weight: 1.5,
+            opacity: 0.6
+        }).addTo(map);
+
+        // 사이드바 업데이트
+        updateSidebar(t);
+
+        // 로그
+        addLog(`[${new Date().toLocaleTimeString()}] ${t.targetId} → ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+    }
+
+    function updateSidebar(t) {
+        let card = document.getElementById(`card-${t.targetId}`);
+        if (!card) {
+            card = document.createElement('div');
+            card.id = `card-${t.targetId}`;
+            card.className = 'target-card';
+            document.getElementById('target-list').appendChild(card);
+        }
+        card.innerHTML = `
+            <div class="id">🎯 ${t.targetId}</div>
+            <div>타입: ${t.targetType}</div>
+            <div>위도: ${t.latitude.toFixed(5)}</div>
+            <div>경도: ${t.longitude.toFixed(5)}</div>
+            <div>고도: ${t.altitude.toFixed(1)}m</div>
+            <div>속도: ${t.speed.toFixed(1)}km/h</div>
+            <div>상태: <span style="color:#ffff00">${t.status}</span></div>
+        `;
+    }
+
+    function addLog(msg) {
+        const log = document.getElementById('log');
+        log.innerHTML = msg + '<br>' + log.innerHTML;
+    }
+</script>
 </body>
 </html>
