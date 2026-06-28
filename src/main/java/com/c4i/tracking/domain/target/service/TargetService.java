@@ -5,6 +5,8 @@ import com.c4i.tracking.domain.target.entity.Target;
 import com.c4i.tracking.domain.target.repository.TargetRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +21,7 @@ public class TargetService {
     private final TargetRepository targetRepository;
 
     @Transactional
+    @CacheEvict(value = {"targets", "targetsByStatus"}, allEntries = true)
     public TargetDto.Response saveTarget(TargetDto.Request request) {
         Target target = Target.builder()
                 .targetId(request.getTargetId())
@@ -37,6 +40,7 @@ public class TargetService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "targets")
     public List<TargetDto.Response> getAllTargets() {
         return targetRepository.findAll()
                 .stream()
@@ -45,6 +49,7 @@ public class TargetService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = "targetsByStatus", key = "#status")
     public List<TargetDto.Response> getTargetsByStatus(String status) {
         return targetRepository.findByStatus(status)
                 .stream()
