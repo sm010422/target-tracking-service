@@ -34,4 +34,11 @@ public class TargetController {
             @PathVariable String status) {
         return ResponseEntity.ok(targetService.getTargetsByStatus(status));
     }
+
+    // 특정 표적 최신 위치 조회
+    @GetMapping("/{targetId}/latest")
+    public ResponseEntity<TargetDto.Response> getLatest(
+            @PathVariable String targetId) {
+        return ResponseEntity.ok(targetService.getLatestByTargetId(targetId));
+    }
 }

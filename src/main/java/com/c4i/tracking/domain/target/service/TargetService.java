@@ -1,5 +1,6 @@
 package com.c4i.tracking.domain.target.service;
 
+import com.c4i.tracking.common.exception.TargetNotFoundException;
 import com.c4i.tracking.domain.target.dto.TargetDto;
 import com.c4i.tracking.domain.target.entity.Target;
 import com.c4i.tracking.domain.target.repository.TargetRepository;
@@ -55,6 +56,14 @@ public class TargetService {
                 .stream()
                 .map(this::toResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    @Cacheable(value = "latestTarget", key = "#targetId")
+    public TargetDto.Response getLatestByTargetId(String targetId) {
+        Target target = targetRepository.findLatestByTargetId(targetId)
+                .orElseThrow(() -> new TargetNotFoundException(targetId));
+        return toResponse(target);
     }
 
     private TargetDto.Response toResponse(Target target) {
