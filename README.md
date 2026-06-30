@@ -30,11 +30,21 @@
 - K3s 클러스터 위에서 다중 Pod로 복제 실행
 - 노드 장애 시 자동 failover로 데이터 유실 없이 지속 운영
 
+### 4. 🤖 AI 위협 분석 (RAG + pgvector)
+- **벡터 유사도 검색**: pgvector HNSW 인덱스로 감지된 표적의 비행 패턴을 위협 지식 베이스와 실시간 비교
+- **RAG 파이프라인**: 유사 위협 패턴 3개를 컨텍스트로 GPT-4o-mini에 전달하여 전술 상황보고서(SITREP) 자동 생성
+- **비동기 분석**: Kafka Consumer의 WebSocket 전송을 블로킹하지 않는 별도 스레드풀 운용
+- **Graceful Degradation**: API 키 미설정 시 규칙 기반 위협 등급(CRITICAL/HIGH/MEDIUM/LOW)으로 자동 폴백
+
 ## 🏗 시스템 아키텍처
 ```
 드론 시뮬레이터 → Kafka → Target Tracking Service → WebSocket → 지휘 대시보드
-                                    ↓
-                              PostgreSQL
+                                    ↓                  ↓
+                              PostgreSQL        [AI 위협 분석 - 비동기]
+                                                       ↓
+                                              pgvector 유사 패턴 검색
+                                                       ↓
+                                              GPT-4o-mini → SITREP
 ```
 
 ## 🛠 기술 스택
@@ -42,10 +52,12 @@
 | 분류 | 기술 |
 |------|------|
 | Language | Java 21 |
-| Framework | Spring Boot 3.5.11, Spring WebSocket |
+| Framework | Spring Boot 3.5.11, Spring WebSocket, Spring AI 1.0.0 |
 | Message Queue | Apache Kafka |
-| Database | PostgreSQL |
-| Cache | Redis (구현 예정) |
+| Database | PostgreSQL + pgvector |
+| Cache | Redis |
+| AI | OpenAI GPT-4o-mini (LLM), text-embedding-ada-002 (임베딩) |
+| Vector Store | pgvector (HNSW 인덱스, 코사인 유사도) |
 | Infra | K3s (Kubernetes), Docker |
 
 ## 📋 구현 현황
@@ -53,10 +65,47 @@
 - [x] 프로젝트 초기 세팅
 - [x] Target 도메인 (Entity, Repository, Service, Controller)
 - [x] Docker Compose 로컬 개발 환경 구성
+- [x] **AI 위협 분석 (RAG + pgvector + Spring AI)**
+  - [x] pgvector 벡터 DB 연동 (PostgreSQL extension)
+  - [x] 위협 지식 베이스 시딩 (10가지 패턴 임베딩)
+  - [x] RAG 파이프라인 (유사 패턴 검색 → LLM SITREP 생성)
+  - [x] 비동기 처리로 WebSocket 실시간성 보장
+  - [x] API 키 미설정 시 규칙 기반 Graceful Degradation
 - [ ] Kafka Producer/Consumer 연동
 - [ ] WebSocket 실시간 통신
 - [ ] 드론 시뮬레이터
 - [ ] K3s 클러스터 배포
+
+## 🤖 AI 빠른 시작
+
+```bash
+# 1. OpenAI API 키 설정
+export OPENAI_API_KEY=sk-...
+
+# 2. pgvector 포함 PostgreSQL 실행
+docker-compose up -d
+
+# 3. 앱 실행 (위협 지식 베이스 자동 초기화)
+./gradlew bootRun
+
+# 4. AI 상태 확인
+curl http://localhost:8080/api/v1/threat-analysis/status
+
+# 5. 위협 분석 테스트
+curl -X POST http://localhost:8080/api/v1/threat-analysis/analyze \
+  -H "Content-Type: application/json" \
+  -d '{
+    "targetId": "DRONE-001",
+    "targetType": "DRONE",
+    "latitude": 37.5,
+    "longitude": 127.0,
+    "altitude": 45.0,
+    "speed": 280.0,
+    "status": "DETECTED"
+  }'
+```
+
+자세한 내용 → [docs/ai-analysis.md](./docs/ai-analysis.md)
 
 ## 🔗 연관 리포지토리
 
