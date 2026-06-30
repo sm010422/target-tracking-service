@@ -1,5 +1,6 @@
 package com.c4i.tracking.kafka;
 
+import com.c4i.tracking.domain.ai.service.ThreatAnalysisService;
 import com.c4i.tracking.domain.target.service.TargetService;
 import com.c4i.tracking.domain.target.dto.TargetDto;
 import lombok.RequiredArgsConstructor;
@@ -15,6 +16,7 @@ public class TargetConsumer {
 
     private final SimpMessagingTemplate messagingTemplate;
     private final TargetService targetService;
+    private final ThreatAnalysisService threatAnalysisService;
 
     @KafkaListener(topics = "target-tracking", groupId = "target-tracking-group")
     public void consume(TargetEvent event) {
@@ -39,5 +41,8 @@ public class TargetConsumer {
         // 2. WebSocket으로 실시간 전송
         messagingTemplate.convertAndSend("/topic/targets", event);
         log.info("WebSocket 전송: targetId={}", event.getTargetId());
+
+        // 3. 비동기 AI 위협 분석 (별도 스레드풀 - WebSocket 전송을 블로킹하지 않음)
+        threatAnalysisService.analyzeAsync(event);
     }
 }
