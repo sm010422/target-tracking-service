@@ -1,7 +1,23 @@
 spring:
   application:
     name: TargetTracking
-    
+
+  ai:
+    openai:
+      api-key: ${OPENAI_API_KEY:PLACEHOLDER}
+      chat:
+        options:
+          model: gpt-4o-mini
+      embedding:
+        options:
+          model: text-embedding-ada-002
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+
   datasource:
     url: jdbc:postgresql://localhost:5432/defense_db
     username: defense
