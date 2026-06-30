@@ -9,11 +9,30 @@ TargetProducer
 Kafka Topic: target-tracking (server3 - 100.106.186.41:9092)
         ↓
 TargetConsumer
-        ↓
-[WebSocket - 구현 예정] → 브라우저 대시보드
-        ↓
-PostgreSQL (server2 - 저장)
+        ├─→ WebSocket → 브라우저 대시보드 (실시간)
+        ├─→ PostgreSQL (server2 - 이력 저장)
+        └─→ [AI 위협 분석 - 비동기]
+                 ↓
+         pgvector 유사 패턴 검색
+                 ↓
+         OpenAI GPT-4o-mini → SITREP 생성
 ```
+
+## AI 위협 분석 레이어 (RAG + pgvector)
+
+```
+POST /api/v1/threat-analysis/analyze
+        ↓
+① 표적 자연어 설명 구성
+        ↓
+② pgvector (HNSW 인덱스) 코사인 유사도 검색 → 유사 위협 패턴 Top-3
+        ↓
+③ GPT-4o-mini → 상황 요약 / 위협 평가 / 권고 조치 생성
+        ↓
+④ ThreatAnalysisDto.Response 반환
+```
+
+자세한 내용 → [ai-analysis.md](./ai-analysis.md)
 
 ## 서버 구성
 
