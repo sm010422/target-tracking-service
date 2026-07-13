@@ -5,7 +5,7 @@ plugins {
 }
 
 ext {
-	springAiVersion = '1.0.0'
+	springAiVersion = '1.1.8'
 }
 
 group = 'com.c4i'
@@ -44,9 +44,10 @@ dependencies {
 
   runtimeOnly 'org.postgresql:postgresql'
 
-  // Spring AI - RAG / Vector DB
-  implementation 'org.springframework.ai:spring-ai-openai-spring-boot-starter'
-  implementation 'org.springframework.ai:spring-ai-pgvector-store-spring-boot-starter'
+  // Spring AI - RAG / Vector DB (Gemini Developer API - free tier)
+  implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+  implementation 'org.springframework.ai:spring-ai-starter-model-google-genai-embedding'
+  implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'

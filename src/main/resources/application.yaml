@@ -3,14 +3,18 @@ spring:
     name: TargetTracking
 
   ai:
-    openai:
-      api-key: ${OPENAI_API_KEY:PLACEHOLDER}
-      chat:
-        options:
-          model: gpt-4o-mini
-      embedding:
-        options:
-          model: text-embedding-ada-002
+    google:
+      genai:
+        api-key: ${GEMINI_API_KEY:PLACEHOLDER}
+        chat:
+          options:
+            model: gemini-2.5-flash
+        embedding:
+          api-key: ${GEMINI_API_KEY:PLACEHOLDER}
+          text:
+            options:
+              model: gemini-embedding-001
+              dimensions: 1536
     vectorstore:
       pgvector:
         initialize-schema: true

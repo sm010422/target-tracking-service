@@ -28,7 +28,7 @@ public class ThreatAnalysisService {
     private final VectorStore vectorStore;
     private final ChatModel chatModel;
 
-    @Value("${spring.ai.openai.api-key:PLACEHOLDER}")
+    @Value("${spring.ai.google.genai.api-key:PLACEHOLDER}")
     private String apiKey;
 
     public boolean isAiEnabled() {
@@ -63,7 +63,7 @@ public class ThreatAnalysisService {
                 .targetId(event.getTargetId())
                 .targetType(event.getTargetType())
                 .threatLevel(ruleBasedLevel)
-                .sitrep("AI 분석 비활성화. OPENAI_API_KEY 환경변수 설정 후 재시작하면 LLM 기반 SITREP이 생성됩니다.")
+                .sitrep("AI 분석 비활성화. GEMINI_API_KEY 환경변수 설정 후 재시작하면 LLM 기반 SITREP이 생성됩니다.")
                 .similarPatterns(List.of())
                 .aiEnabled(false)
                 .build();

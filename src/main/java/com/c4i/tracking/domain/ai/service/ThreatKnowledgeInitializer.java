@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.core.annotation.Order;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -15,7 +16,7 @@ import java.util.Map;
 
 /**
  * 애플리케이션 시작 시 방산 위협 패턴 지식 베이스를 pgvector에 적재.
- * OPENAI_API_KEY 미설정 시 임베딩 호출이 불가하므로 초기화를 건너뜀.
+ * GEMINI_API_KEY 미설정 시 임베딩 호출이 불가하므로 초기화를 건너뜀.
  */
 @Slf4j
 @Component
@@ -24,9 +25,12 @@ import java.util.Map;
 public class ThreatKnowledgeInitializer implements ApplicationRunner {
 
     private final VectorStore vectorStore;
+    private final JdbcTemplate jdbcTemplate;
 
-    @Value("${spring.ai.openai.api-key:PLACEHOLDER}")
+    @Value("${spring.ai.google.genai.api-key:PLACEHOLDER}")
     private String apiKey;
+
+    private static final String KB_SOURCE = "c4i-threat-kb";
 
     private static final List<String> THREAT_PATTERNS = List.of(
         // ── 드론 ──────────────────────────────────────────────────────────
@@ -77,15 +81,20 @@ public class ThreatKnowledgeInitializer implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         if (isApiKeyPlaceholder()) {
-            log.warn("[ThreatAI] OPENAI_API_KEY 미설정 - 위협 지식 베이스 초기화 건너뜀. " +
-                     "export OPENAI_API_KEY=<your-key> 후 재시작하면 AI 기능이 활성화됩니다.");
+            log.warn("[ThreatAI] GEMINI_API_KEY 미설정 - 위협 지식 베이스 초기화 건너뜀. " +
+                     "export GEMINI_API_KEY=<your-key> 후 재시작하면 AI 기능이 활성화됩니다.");
+            return;
+        }
+
+        if (isAlreadySeeded()) {
+            log.info("[ThreatAI] 위협 지식 베이스가 이미 적재되어 있어 초기화를 건너뜀");
             return;
         }
 
         try {
             log.info("[ThreatAI] 위협 지식 베이스 초기화 시작 ({} 개 패턴)", THREAT_PATTERNS.size());
             List<Document> documents = THREAT_PATTERNS.stream()
-                .map(content -> new Document(content, Map.of("source", "c4i-threat-kb")))
+                .map(content -> new Document(content, Map.of("source", KB_SOURCE)))
                 .toList();
             vectorStore.add(documents);
             log.info("[ThreatAI] 위협 지식 베이스 초기화 완료");
@@ -96,5 +105,16 @@ public class ThreatKnowledgeInitializer implements ApplicationRunner {
 
     private boolean isApiKeyPlaceholder() {
         return apiKey == null || apiKey.isBlank() || "PLACEHOLDER".equals(apiKey);
+    }
+
+    /**
+     * pgvector 테이블에 이미 지식 베이스가 적재됐는지 확인.
+     * Pod 재시작/재배포 시마다 중복 삽입되는 것을 방지.
+     */
+    private boolean isAlreadySeeded() {
+        Integer count = jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM vector_store WHERE metadata->>'source' = ?",
+            Integer.class, KB_SOURCE);
+        return count != null && count > 0;
     }
 }

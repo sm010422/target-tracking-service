@@ -8,10 +8,10 @@
 
 | 역할 | 기술 |
 |------|------|
-| LLM (SITREP 생성) | OpenAI GPT-4o-mini |
-| 임베딩 모델 | OpenAI text-embedding-ada-002 (1536차원) |
+| LLM (SITREP 생성) | Google Gemini 2.5 Flash |
+| 임베딩 모델 | Google gemini-embedding-001 (1536차원) |
 | 벡터 DB | PostgreSQL + pgvector (HNSW 인덱스) |
-| AI 프레임워크 | Spring AI 1.0.0 |
+| AI 프레임워크 | Spring AI 1.1.8 |
 | 비동기 처리 | Spring @Async (aiAnalysisExecutor) |
 
 ## RAG 파이프라인
@@ -32,7 +32,7 @@
    [현재 표적] + [유사 패턴 3개] + [규칙 기반 위협 등급]
         │
         ▼
-④ GPT-4o-mini → SITREP 생성
+④ Gemini 2.5 Flash → SITREP 생성
    - 상황 요약
    - 위협 평가
    - 권고 조치 (3가지 이내)
@@ -91,7 +91,7 @@ GET /api/v1/threat-analysis/status
 ```json
 {
   "aiEnabled": false,
-  "message": "AI 비활성화 - export OPENAI_API_KEY=<your-key> 후 재시작 필요"
+  "message": "AI 비활성화 - export GEMINI_API_KEY=<your-key> 후 재시작 필요"
 }
 ```
 
@@ -133,24 +133,24 @@ Content-Type: application/json
 
 ### 1. API 키 설정
 
-```bash
-export OPENAI_API_KEY=sk-...
-```
-
-### 2. Docker Compose 실행
+[Google AI Studio](https://aistudio.google.com/apikey)에서 무료로 발급받을 수 있습니다. `.env` 파일에 추가하면 `docker compose`가 자동으로 읽습니다.
 
 ```bash
-docker-compose up -d
+echo "GEMINI_API_KEY=AIza..." >> .env
 ```
 
-pgvector/pgvector:pg16 이미지가 vector extension을 포함합니다.  
+### 2. 전체 스택 실행
+
+```bash
+docker compose up -d --build
+```
+
+Postgres(pgvector)/Redis/Kafka/Zookeeper/앱까지 한 번에 기동됩니다.  
+pgvector/pgvector:pg16 이미지가 vector extension을 포함하고,
 `spring.ai.vectorstore.pgvector.initialize-schema: true` 옵션이 schema와 HNSW 인덱스를 자동 생성합니다.
 
-### 3. 앱 실행
-
-```bash
-./gradlew bootRun
-```
+> 로컬에서 앱만 따로 핫리로드하며 개발하려면 인프라만 띄우고(`docker compose up -d postgres redis kafka zookeeper`),
+> `export GEMINI_API_KEY=...` 후 `./gradlew bootRun`으로 실행하세요.
 
 API 키 설정 시 시작 로그에서 지식 베이스 초기화 확인:
 ```
@@ -160,7 +160,7 @@ API 키 설정 시 시작 로그에서 지식 베이스 초기화 확인:
 
 API 키 미설정 시:
 ```
-[ThreatAI] OPENAI_API_KEY 미설정 - 위협 지식 베이스 초기화 건너뜀.
+[ThreatAI] GEMINI_API_KEY 미설정 - 위협 지식 베이스 초기화 건너뜀.
 ```
 
 ## 아키텍처 설계 결정
@@ -174,7 +174,7 @@ API 키 미설정 시:
 ### 비동기 분석 설계
 
 Kafka Consumer 스레드가 AI 분석을 기다리지 않도록 `@Async`로 분리했습니다.  
-OpenAI API 응답 시간(~1-3초)이 WebSocket 실시간 전송(~10ms)에 영향을 주지 않습니다.
+Gemini API 응답 시간(~1-3초)이 WebSocket 실시간 전송(~10ms)에 영향을 주지 않습니다.
 
 ```
 Kafka Consumer Thread          AI Analysis Thread (aiAnalysisExecutor)

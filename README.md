@@ -32,7 +32,7 @@
 
 ### 4. 🤖 AI 위협 분석 (RAG + pgvector)
 - **벡터 유사도 검색**: pgvector HNSW 인덱스로 감지된 표적의 비행 패턴을 위협 지식 베이스와 실시간 비교
-- **RAG 파이프라인**: 유사 위협 패턴 3개를 컨텍스트로 GPT-4o-mini에 전달하여 전술 상황보고서(SITREP) 자동 생성
+- **RAG 파이프라인**: 유사 위협 패턴 3개를 컨텍스트로 Gemini 2.5 Flash에 전달하여 전술 상황보고서(SITREP) 자동 생성
 - **비동기 분석**: Kafka Consumer의 WebSocket 전송을 블로킹하지 않는 별도 스레드풀 운용
 - **Graceful Degradation**: API 키 미설정 시 규칙 기반 위협 등급(CRITICAL/HIGH/MEDIUM/LOW)으로 자동 폴백
 
@@ -44,7 +44,7 @@
                                                        ↓
                                               pgvector 유사 패턴 검색
                                                        ↓
-                                              GPT-4o-mini → SITREP
+                                              Gemini 2.5 Flash → SITREP
 ```
 
 ## 🛠 기술 스택
@@ -52,11 +52,11 @@
 | 분류 | 기술 |
 |------|------|
 | Language | Java 21 |
-| Framework | Spring Boot 3.5.11, Spring WebSocket, Spring AI 1.0.0 |
+| Framework | Spring Boot 3.5.11, Spring WebSocket, Spring AI 1.1.8 |
 | Message Queue | Apache Kafka |
 | Database | PostgreSQL + pgvector |
 | Cache | Redis |
-| AI | OpenAI GPT-4o-mini (LLM), text-embedding-ada-002 (임베딩) |
+| AI | Google Gemini 2.5 Flash (LLM), gemini-embedding-001 (임베딩) |
 | Vector Store | pgvector (HNSW 인덱스, 코사인 유사도) |
 | Infra | K3s (Kubernetes), Docker |
 
@@ -79,19 +79,16 @@
 ## 🤖 AI 빠른 시작
 
 ```bash
-# 1. OpenAI API 키 설정
-export OPENAI_API_KEY=sk-...
+# 1. Gemini API 키 설정 (https://aistudio.google.com/apikey 에서 무료 발급)
+echo "GEMINI_API_KEY=AIza..." >> .env
 
-# 2. pgvector 포함 PostgreSQL 실행
-docker-compose up -d
+# 2. 전체 스택 실행 (Postgres/Redis/Kafka/Zookeeper/App, 위협 지식 베이스 자동 초기화)
+docker compose up -d --build
 
-# 3. 앱 실행 (위협 지식 베이스 자동 초기화)
-./gradlew bootRun
-
-# 4. AI 상태 확인
+# 3. AI 상태 확인
 curl http://localhost:8080/api/v1/threat-analysis/status
 
-# 5. 위협 분석 테스트
+# 4. 위협 분석 테스트
 curl -X POST http://localhost:8080/api/v1/threat-analysis/analyze \
   -H "Content-Type: application/json" \
   -d '{

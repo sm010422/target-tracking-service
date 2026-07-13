@@ -27,7 +27,7 @@ public class ThreatAnalysisController {
             "aiEnabled", enabled,
             "message", enabled
                 ? "AI 위협 분석 활성화됨 (RAG + pgvector)"
-                : "AI 비활성화 - export OPENAI_API_KEY=<your-key> 후 재시작 필요"
+                : "AI 비활성화 - export GEMINI_API_KEY=<your-key> 후 재시작 필요"
         ));
     }
 

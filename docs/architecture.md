@@ -15,7 +15,7 @@ TargetConsumer
                  ↓
          pgvector 유사 패턴 검색
                  ↓
-         OpenAI GPT-4o-mini → SITREP 생성
+         Google Gemini 2.5 Flash → SITREP 생성
 ```
 
 ## AI 위협 분석 레이어 (RAG + pgvector)
@@ -27,7 +27,7 @@ POST /api/v1/threat-analysis/analyze
         ↓
 ② pgvector (HNSW 인덱스) 코사인 유사도 검색 → 유사 위협 패턴 Top-3
         ↓
-③ GPT-4o-mini → 상황 요약 / 위협 평가 / 권고 조치 생성
+③ Gemini 2.5 Flash → 상황 요약 / 위협 평가 / 권고 조치 생성
         ↓
 ④ ThreatAnalysisDto.Response 반환
 ```
