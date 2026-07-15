@@ -2,8 +2,10 @@ package com.c4i.tracking.domain.target.repository;
 
 import com.c4i.tracking.domain.target.entity.Target;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,4 +15,8 @@ public interface TargetRepository extends JpaRepository<Target, Long> {
 
     @Query("SELECT t FROM Target t WHERE t.targetId = :targetId ORDER BY t.detectedAt DESC LIMIT 1")
     Optional<Target> findLatestByTargetId(String targetId);
+
+    @Modifying
+    @Query("DELETE FROM Target t WHERE t.detectedAt < :cutoff")
+    int deleteByDetectedAtBefore(LocalDateTime cutoff);
 }
