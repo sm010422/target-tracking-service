@@ -12,7 +12,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * RAG 기반 위협 분석 파이프라인:
@@ -25,8 +29,12 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ThreatAnalysisService {
 
+    // 무료 tier 일일 호출 한도를 넘지 않도록 targetId별 최소 분석 간격
+    private static final Duration ANALYSIS_COOLDOWN = Duration.ofMinutes(10);
+
     private final VectorStore vectorStore;
     private final ChatModel chatModel;
+    private final Map<String, Instant> lastAnalyzedAt = new ConcurrentHashMap<>();
 
     @Value("${spring.ai.google.genai.api-key:PLACEHOLDER}")
     private String apiKey;
@@ -35,12 +43,24 @@ public class ThreatAnalysisService {
         return apiKey != null && !apiKey.isBlank() && !"PLACEHOLDER".equals(apiKey);
     }
 
+    private boolean shouldAnalyze(String targetId) {
+        Instant now = Instant.now();
+        // 쿨다운이 지났을 때만 타임스탬프를 갱신 (건너뛴 호출이 기준 시각을 밀어내지 않도록 원자적으로 처리)
+        Instant updated = lastAnalyzedAt.compute(targetId, (key, previous) ->
+                previous == null || Duration.between(previous, now).compareTo(ANALYSIS_COOLDOWN) >= 0
+                        ? now
+                        : previous);
+        return updated == now;
+    }
+
     /**
      * Kafka Consumer에서 호출하는 비동기 분석 (WebSocket 전송을 블로킹하지 않음).
+     * 같은 targetId는 쿨다운 기간 내 재호출을 건너뛰어 LLM API 호출량을 제한한다.
      */
     @Async("aiAnalysisExecutor")
     public void analyzeAsync(TargetEvent event) {
         if (!isAiEnabled()) return;
+        if (!shouldAnalyze(event.getTargetId())) return;
         try {
             ThreatAnalysisDto.Response result = analyze(event);
             log.info("[ThreatAI] targetId={} | threatLevel={} | sitrep={}",

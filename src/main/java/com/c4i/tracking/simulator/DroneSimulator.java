@@ -22,7 +22,7 @@ public class DroneSimulator {
             "DRONE-001", "DRONE-002", "DRONE-003"
     );
 
-    @Scheduled(fixedRate = 1000) // 1초마다 실행
+    @Scheduled(fixedRate = 30_000) // 30초마다 실행 (서버 부하 완화)
     public void simulate() {
         DRONE_IDS.forEach(droneId -> {
             TargetEvent event = TargetEvent.builder()
