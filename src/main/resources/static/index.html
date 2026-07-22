@@ -25,7 +25,28 @@
             align-items: center;
         }
         #header h1 { font-size: 18px; }
-        #status { font-size: 13px; }
+        #controls { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+
+        #controls input {
+            width: 40px;
+            background: #0a0a0a;
+            color: #00ff41;
+            border: 1px solid #00ff41;
+            font-family: monospace;
+            padding: 3px;
+        }
+
+        #controls button {
+            background: #001a00;
+            color: #00ff41;
+            border: 1px solid #00ff41;
+            font-family: monospace;
+            padding: 4px 10px;
+            cursor: pointer;
+        }
+
+        #controls button:hover { background: #00ff41; color: #001a00; }
+        #controls button:disabled { opacity: 0.5; cursor: not-allowed; }
 
         #container {
             display: flex;
@@ -81,7 +102,11 @@
 
 <div id="header">
     <h1>📡 C4I 실시간 전술 지휘통제 대시보드</h1>
-    <div id="status">🔴 연결 중...</div>
+    <div id="controls">
+        <span id="status">🔴 연결 중...</span>
+        <label>회수 <input type="number" id="rounds" value="1" min="1" max="50"></label>
+        <button id="run-btn" onclick="runSimulation()">▶ 시뮬레이션 실행</button>
+    </div>
 </div>
 
 <div id="container">
@@ -195,6 +220,23 @@
     function addLog(msg) {
         const log = document.getElementById('log');
         log.innerHTML = msg + '<br>' + log.innerHTML;
+    }
+
+    // 시뮬레이션 실행 (더 이상 자동으로 돌지 않고, 버튼 클릭 시에만 실행됨)
+    async function runSimulation() {
+        const btn = document.getElementById('run-btn');
+        const rounds = document.getElementById('rounds').value;
+
+        btn.disabled = true;
+        try {
+            const res = await fetch(`/api/simulator/run?rounds=${rounds}`, { method: 'POST' });
+            const text = await res.text();
+            addLog(`[${new Date().toLocaleTimeString()}] ${text}`);
+        } catch (e) {
+            addLog(`[${new Date().toLocaleTimeString()}] 시뮬레이션 실행 실패: ${e}`);
+        } finally {
+            btn.disabled = false;
+        }
     }
 </script>
 </body>
