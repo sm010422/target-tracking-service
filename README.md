@@ -36,15 +36,26 @@
 - **비동기 분석**: Kafka Consumer의 WebSocket 전송을 블로킹하지 않는 별도 스레드풀 운용
 - **Graceful Degradation**: API 키 미설정 시 규칙 기반 위협 등급(CRITICAL/HIGH/MEDIUM/LOW)으로 자동 폴백
 
+### 5. 🔀 threat-intel-ai-service와의 이벤트 연동
+- 이 서비스가 발행하는 `target-tracking` Kafka 토픽을, 별도 Python AI 마이크로서비스([threat-intel-ai-service](https://github.com/sm010422/threat-intel-ai-service))가 **독립된 consumer group**으로 동시 구독
+- 이 서비스의 AI 위협 분석이 "실시간 단일 표적 vs 고정 10개 위협 패턴 지식베이스" 비교에 특화된 반면, threat-intel-ai-service는 **실제 탐지 이력 전체를 벡터DB(Qdrant)에 누적**해 "과거에 유사 패턴이 있었나?" 같은 이력 기반 질의와, 비정형 위협 인텔 문서에 대한 RAG 챗봇을 담당 — 같은 이벤트 스트림을 서로 다른 관점으로 소비하는 폴리글랏 마이크로서비스 구조
+- 두 서비스는 오프셋을 공유하지 않아 한쪽 장애가 다른 쪽 소비에 영향을 주지 않음
+
 ## 🏗 시스템 아키텍처
 ```
-드론 시뮬레이터 → Kafka → Target Tracking Service → WebSocket → 지휘 대시보드
-                                    ↓                  ↓
-                              PostgreSQL        [AI 위협 분석 - 비동기]
-                                                       ↓
-                                              pgvector 유사 패턴 검색
-                                                       ↓
-                                              Gemini 2.5 Flash → SITREP
+드론 시뮬레이터 → Kafka(target-tracking) → Target Tracking Service → WebSocket → 지휘 대시보드
+                         │                          ↓                  ↓
+                         │                    PostgreSQL        [AI 위협 분석 - 비동기]
+                         │                                             ↓
+                         │                                    pgvector 유사 패턴 검색
+                         │                                             ↓
+                         │                                    Gemini 2.5 Flash → SITREP
+                         │
+                         └──▶ (별도 consumer group) threat-intel-ai-service
+                                       ↓
+                              Qdrant 이력 색인 + 문서 RAG
+                                       ↓
+                              LangGraph 라우팅 → /chat, /ingest/doc
 ```
 
 ## 🛠 기술 스택
@@ -108,3 +119,4 @@ curl -X POST http://localhost:8080/api/v1/threat-analysis/analyze \
 
 - 🏗️ **[K3s MSA Infrastructure](https://github.com/sm010422/k3s-msa-infrastructure)** - 클러스터 인프라 구성
 - 🚪 **[Defense API Gateway](https://github.com/sm010422/defense-api-gateway)** - 보안 인증 및 트래픽 라우팅
+- 🧠 **[Threat Intel AI Service](https://github.com/sm010422/threat-intel-ai-service)** - 이 서비스의 Kafka 이벤트를 구독하는 Python AI 마이크로서비스 (문서 RAG + 이력 패턴 탐지, FastAPI + LangGraph + Qdrant)
