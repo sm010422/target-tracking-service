@@ -54,6 +54,25 @@ public class ThreatAnalysisService {
     }
 
     /**
+     * AdsbFiPollingService가 20초마다 서로 다른 민항기 수십 대를 흘려보내면서,
+     * 전부 AI 분석에 넣었더니 aiAnalysisExecutor 큐(용량 100)가 넘쳐서
+     * RejectedExecutionException이 실제로 발생했다 (targetId별 10분 쿨다운은
+     * 있지만, 대부분의 항공기가 반경을 스쳐 지나가는 1~2분 안에 다시는 안 보여서
+     * 쿨다운이 사실상 무력화됨).
+     *
+     * 평범하게 순항 중인 민항기(등급 MEDIUM 이하, 군용 아님)는 AI 분석을 건너뛰고
+     * 규칙 기반 등급만 적용한다 -- 어차피 실시간 SITREP까지 필요한 케이스가
+     * 아니다. DRONE/MISSILE(가짜 시뮬레이터, 개체 수가 적음)과 군용기/이례적으로
+     * 위험한 민항기(HIGH 이상)는 그대로 전부 분석한다.
+     */
+    private boolean warrantsAiAnalysis(TargetEvent event) {
+        if (!"AIRCRAFT".equals(event.getTargetType())) return true;
+        if ("MILITARY".equals(event.getStatus())) return true;
+        String level = calculateRuleBasedThreatLevel(event);
+        return "HIGH".equals(level) || "CRITICAL".equals(level);
+    }
+
+    /**
      * Kafka Consumer에서 호출하는 비동기 분석 (WebSocket 전송을 블로킹하지 않음).
      * 같은 targetId는 쿨다운 기간 내 재호출을 건너뛰어 LLM API 호출량을 제한한다.
      */
@@ -61,6 +80,7 @@ public class ThreatAnalysisService {
     public void analyzeAsync(TargetEvent event) {
         if (!isAiEnabled()) return;
         if (!shouldAnalyze(event.getTargetId())) return;
+        if (!warrantsAiAnalysis(event)) return;
         try {
             ThreatAnalysisDto.Response result = analyze(event);
             log.info("[ThreatAI] targetId={} | threatLevel={} | sitrep={}",
