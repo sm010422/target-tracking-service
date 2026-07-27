@@ -39,13 +39,17 @@ public class Target {
     @Column(nullable = false)
     private String status;         // DETECTED, TRACKING, LOST
 
+    @Column
+    private Double heading;        // 진행방향(도, 0=북/시계방향), 가짜 시뮬레이터는 null
+
     @CreatedDate
     @Column(updatable = false)
     private LocalDateTime detectedAt;
 
     @Builder
     public Target(String targetId, String targetType, Double latitude,
-                  Double longitude, Double altitude, Double speed, String status) {
+                  Double longitude, Double altitude, Double speed, String status,
+                  Double heading) {
         this.targetId = targetId;
         this.targetType = targetType;
         this.latitude = latitude;
@@ -53,5 +57,6 @@ public class Target {
         this.altitude = altitude;
         this.speed = speed;
         this.status = status;
+        this.heading = heading;
     }
 }

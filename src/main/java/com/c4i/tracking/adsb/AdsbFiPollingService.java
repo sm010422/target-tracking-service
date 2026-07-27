@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -26,30 +27,36 @@ import java.util.Set;
  * status="MILITARY"로 표시하고, 이는 규칙 엔진에서 등급을 한 단계 올리는 데 쓰인다
  * (자세한 내용은 ThreatAnalysisService 참고).
  *
- * adsb.fi 이용약관상 레이트리밋은 "초당 최대 1회"다. poll()이 매 주기마다 반경조회 +
- * 군용기목록조회 두 요청을 거의 동시에 쏘면 한 주기 안에서 이 한도를 넘길 수 있어서,
- * 군용기 목록은 별도 캐시로 분리해 훨씬 낮은 빈도(기본 2분)로만 갱신한다 -- 반경조회만
- * 매 주기(기본 20초, 즉 초당 0.05회 수준으로 한도 대비 20배 이상 여유)마다 나간다.
+ * adsb.fi 이용약관상 레이트리밋은 "초당 최대 1회"다. 군용기 목록은 별도 캐시로 분리해
+ * 훨씬 낮은 빈도(기본 2분)로만 갱신하고, 아래 REGIONS 여러 곳을 조회할 때도 지역 간
+ * 호출 사이에 sleepBetweenRegionCalls()로 간격을 둬서 한도를 넘기지 않는다.
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class AdsbFiPollingService {
 
+    /**
+     * 실제 군용기 움직임을 관찰하고 싶어서 한국(수도권) 외에 실전 군사 활동이
+     * 실제로 잡히는 분쟁지역 두 곳(우크라이나, 이란)도 같이 조회한다. 전부 공개
+     * ADS-B 신호를 집계한 것이라 OSINT 관점에서 합법적인 이용이다.
+     */
+    private record Region(String code, String label, double lat, double lon, int radiusNm) {}
+
+    private static final List<Region> REGIONS = List.of(
+        new Region("KOREA", "대한민국(수도권)", 37.5665, 126.9780, 100),
+        new Region("UKRAINE", "우크라이나(키이우)", 50.4501, 30.5234, 150),
+        new Region("IRAN", "이란(테헤란)", 35.6892, 51.3890, 150)
+    );
+
+    // 지역 간 호출 사이 대기시간 -- adsb.fi 초당 1회 한도를 여유 있게 지키기 위함.
+    private static final long INTER_REGION_DELAY_MS = 1_100;
+
     private final AdsbFiClient adsbFiClient;
     private final TargetProducer targetProducer;
 
     @Value("${adsb.enabled:false}")
     private boolean enabled;
-
-    @Value("${adsb.center-lat:37.5665}")
-    private double centerLat;
-
-    @Value("${adsb.center-lon:126.9780}")
-    private double centerLon;
-
-    @Value("${adsb.radius-nm:100}")
-    private int radiusNm;
 
     @Value("${adsb.military-cache-ttl-ms:120000}")
     private long militaryCacheTtlMs;
@@ -62,18 +69,35 @@ public class AdsbFiPollingService {
         if (!enabled) return;
 
         Set<String> militaryHexes = getMilitaryHexesCached();
-        JsonNode aircraft = adsbFiClient.fetchAircraftNear(centerLat, centerLon, radiusNm);
 
-        int published = 0;
-        for (JsonNode ac : aircraft) {
-            TargetEvent event = toTargetEvent(ac, militaryHexes);
-            if (event == null) continue;
-            targetProducer.send(event);
-            published++;
+        for (int i = 0; i < REGIONS.size(); i++) {
+            Region region = REGIONS.get(i);
+            JsonNode aircraft = adsbFiClient.fetchAircraftNear(region.lat(), region.lon(), region.radiusNm());
+
+            int published = 0;
+            int military = 0;
+            for (JsonNode ac : aircraft) {
+                TargetEvent event = toTargetEvent(ac, militaryHexes);
+                if (event == null) continue;
+                targetProducer.send(event);
+                published++;
+                if ("MILITARY".equals(event.getStatus())) military++;
+            }
+            log.info("[AdsbFi] {}({}) 반경 {}nm: {}대 발행 (군용 {}대 포함)",
+                region.code(), region.label(), region.radiusNm(), published, military);
+
+            if (i < REGIONS.size() - 1) {
+                sleepBetweenRegionCalls();
+            }
         }
-        log.info("[AdsbFi] 중심({}, {}) 반경 {}nm: {}대 발행 (군용 캐시 {}대, 갱신 {}초 전)",
-            centerLat, centerLon, radiusNm, published, militaryHexes.size(),
-            Duration.between(militaryCacheUpdatedAt, Instant.now()).toSeconds());
+    }
+
+    private void sleepBetweenRegionCalls() {
+        try {
+            Thread.sleep(INTER_REGION_DELAY_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     /**
@@ -104,8 +128,14 @@ public class AdsbFiPollingService {
         double altitudeMeters = altNode.isNumber() ? altNode.asDouble() * 0.3048 : 0.0;
         double speedKmh = ac.path("gs").asDouble(0.0) * 1.852;
 
+        // track: 실제 진행방향(도, 0=북/시계방향). 지상에 정지 중이거나 데이터가 없으면 null.
+        JsonNode trackNode = ac.path("track");
+        Double heading = trackNode.isNumber() ? trackNode.asDouble() : null;
+
         String flight = ac.path("flight").asText("").trim();
-        String targetId = !flight.isBlank() ? flight : hex;
+        // 트랜스폰더 콜사인 필드가 깨져서 오는 경우(예: "@@@@@@@@")가 실제로 있다 --
+        // 영숫자로만 이뤄진 유효해 보이는 콜사인이 아니면 hex 코드로 대체한다.
+        String targetId = flight.matches("[A-Za-z0-9]+") ? flight : hex;
         boolean isMilitary = militaryHexes.contains(hex);
 
         return TargetEvent.builder()
@@ -116,6 +146,7 @@ public class AdsbFiPollingService {
             .altitude(altitudeMeters)
             .speed(speedKmh)
             .status(isMilitary ? "MILITARY" : "DETECTED")
+            .heading(heading)
             .build();
     }
 }

@@ -34,6 +34,7 @@ public class TargetConsumer {
                 .altitude(event.getAltitude())
                 .speed(event.getSpeed())
                 .status(event.getStatus())
+                .heading(event.getHeading())
                 .build();
 
         targetService.saveTarget(request);

@@ -32,6 +32,7 @@ public class TargetService {
                 .altitude(request.getAltitude())
                 .speed(request.getSpeed())
                 .status(request.getStatus())
+                .heading(request.getHeading())
                 .build();
 
         Target saved = targetRepository.save(target);
@@ -76,6 +77,7 @@ public class TargetService {
                 .altitude(target.getAltitude())
                 .speed(target.getSpeed())
                 .status(target.getStatus())
+                .heading(target.getHeading())
                 .detectedAt(target.getDetectedAt() != null ?
                         target.getDetectedAt().toString() : null)
                 .build();

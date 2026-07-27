@@ -15,6 +15,7 @@ public class TargetDto {
         private Double altitude;
         private Double speed;
         private String status;
+        private Double heading;
     }
 
     @Getter
@@ -29,5 +30,6 @@ public class TargetDto {
         private Double speed;
         private String status;
         private String detectedAt;
+        private Double heading;
     }
 }
