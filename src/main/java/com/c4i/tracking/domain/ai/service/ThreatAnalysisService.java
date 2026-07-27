@@ -29,8 +29,13 @@ import java.util.concurrent.ConcurrentHashMap;
 @RequiredArgsConstructor
 public class ThreatAnalysisService {
 
-    // 무료 tier 일일 호출 한도를 넘지 않도록 targetId별 최소 분석 간격
-    private static final Duration ANALYSIS_COOLDOWN = Duration.ofMinutes(10);
+    // 무료 tier 호출 한도를 넘지 않도록 targetId별 최소 분석 간격.
+    // 군용기(status=MILITARY)는 반경을 벗어나지 않는 한 매 폴링 주기(20초)마다
+    // Kafka 이벤트가 계속 들어오므로, 쿨다운이 짧으면 정찰 중인 자산 하나가
+    // 하루 종일 백그라운드에서 embedding 쿼터를 갉아먹어 정작 사용자가 수동으로
+    // "AI 위협분석" 버튼을 누를 때 쿼터가 없는 상황(429)이 실제로 발생했다.
+    // 10분 -> 30분으로 늘려 수동 분석에 쓸 쿼터 여유를 남긴다.
+    private static final Duration ANALYSIS_COOLDOWN = Duration.ofMinutes(30);
 
     private final VectorStore vectorStore;
     private final ChatModel chatModel;
@@ -109,30 +114,48 @@ public class ThreatAnalysisService {
                 .build();
         }
 
-        // Step 1: Retrieval — pgvector 유사 위협 패턴 검색
-        List<Document> similar = vectorStore.similaritySearch(
-            SearchRequest.builder()
-                .query(targetDescription)
-                .topK(3)
-                .similarityThreshold(0.5)
-                .build()
-        );
+        try {
+            // Step 1: Retrieval — pgvector 유사 위협 패턴 검색
+            List<Document> similar = vectorStore.similaritySearch(
+                SearchRequest.builder()
+                    .query(targetDescription)
+                    .topK(3)
+                    .similarityThreshold(0.5)
+                    .build()
+            );
 
-        List<String> similarPatterns = similar.stream()
-            .map(Document::getText)
-            .toList();
+            List<String> similarPatterns = similar.stream()
+                .map(Document::getText)
+                .toList();
 
-        // Step 2: Augmented Generation — 유사 패턴을 컨텍스트로 LLM SITREP 생성
-        String sitrep = generateSitrep(targetDescription, similarPatterns, ruleBasedLevel);
+            // Step 2: Augmented Generation — 유사 패턴을 컨텍스트로 LLM SITREP 생성
+            String sitrep = generateSitrep(targetDescription, similarPatterns, ruleBasedLevel);
 
-        return ThreatAnalysisDto.Response.builder()
-            .targetId(event.getTargetId())
-            .targetType(event.getTargetType())
-            .threatLevel(ruleBasedLevel)
-            .sitrep(sitrep)
-            .similarPatterns(similarPatterns)
-            .aiEnabled(true)
-            .build();
+            return ThreatAnalysisDto.Response.builder()
+                .targetId(event.getTargetId())
+                .targetType(event.getTargetType())
+                .threatLevel(ruleBasedLevel)
+                .sitrep(sitrep)
+                .similarPatterns(similarPatterns)
+                .aiEnabled(true)
+                .build();
+        } catch (Exception e) {
+            // Gemini 무료 tier의 embedding/chat 호출량 한도(429)에 실제로 걸린 사례가 있었다 --
+            // ADS-B가 흘려보내는 군용기/고위험 표적에 대해 백그라운드 자동분석(analyzeAsync)이
+            // 계속 돌면서 같은 하루치 free tier 쿼터를 수동 "AI 위협분석" 버튼 클릭과 공유하기
+            // 때문에, 사용자가 아무 문제 없는 표적을 클릭해도 그 순간 쿼터가 없으면 실패할 수 있다.
+            // 이걸 그냥 HTTP 500으로 던지는 대신, 규칙 기반 등급이라도 정상적으로 보여준다.
+            log.warn("[ThreatAI] LLM 호출 실패 (쿼터/네트워크), 규칙 기반 등급으로 대체: targetId={}, error={}",
+                event.getTargetId(), e.getMessage());
+            return ThreatAnalysisDto.Response.builder()
+                .targetId(event.getTargetId())
+                .targetType(event.getTargetType())
+                .threatLevel(ruleBasedLevel)
+                .sitrep("⚠️ AI 분석 일시 실패 (Gemini API 요청량 제한 또는 일시 오류) — 규칙 기반 등급만 표시됩니다. 잠시 후 다시 시도해주세요.")
+                .similarPatterns(List.of())
+                .aiEnabled(true)
+                .build();
+        }
     }
 
     private String generateSitrep(String description, List<String> patterns, String threatLevel) {
