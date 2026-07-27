@@ -41,21 +41,28 @@
 - 이 서비스의 AI 위협 분석이 "실시간 단일 표적 vs 고정 10개 위협 패턴 지식베이스" 비교에 특화된 반면, threat-intel-ai-service는 **실제 탐지 이력 전체를 벡터DB(Qdrant)에 누적**해 "과거에 유사 패턴이 있었나?" 같은 이력 기반 질의와, 비정형 위협 인텔 문서에 대한 RAG 챗봇을 담당 — 같은 이벤트 스트림을 서로 다른 관점으로 소비하는 폴리글랏 마이크로서비스 구조
 - 두 서비스는 오프셋을 공유하지 않아 한쪽 장애가 다른 쪽 소비에 영향을 주지 않음
 
+### 6. 🛰️ 실시간 공개 ADS-B 피드 (adsb.fi)
+- 가짜 난수 시뮬레이터와 별개로, [opendata.adsb.fi](https://adsb.fi)의 공개 항공기 추적 데이터를 주기적으로 폴링해 **실제 항공기**를 `AIRCRAFT` 타입 표적으로 같은 Kafka 파이프라인에 발행 (`AdsbFiPollingService`)
+- 군용기는 별도 `/v2/mil` 엔드포인트와 hex 코드 대조로 판별해 `status=MILITARY`로 표시 — 규칙 기반 위협 등급을 한 단계 상향
+- 중심 좌표/반경을 설정으로 분리해서, 수도권뿐 아니라 우크라이나·이란 등 분쟁지역의 공개 항공 트래픽 감시로도 전환 가능
+- adsb.fi 데이터는 개인/비상업적 용도로만 이용 가능 (ODbL 같은 완전 오픈 라이선스 아님) — 대시보드 하단에 출처 표시
+
 ## 🏗 시스템 아키텍처
 ```
-드론 시뮬레이터 → Kafka(target-tracking) → Target Tracking Service → WebSocket → 지휘 대시보드
-                         │                          ↓                  ↓
-                         │                    PostgreSQL        [AI 위협 분석 - 비동기]
-                         │                                             ↓
-                         │                                    pgvector 유사 패턴 검색
-                         │                                             ↓
-                         │                                    Gemini (gemini-flash-lite-latest) → SITREP
-                         │
-                         └──▶ (별도 consumer group) threat-intel-ai-service
-                                       ↓
-                              Qdrant 이력 색인 + 문서 RAG
-                                       ↓
-                              LangGraph 라우팅 → /chat, /ingest/doc
+드론 시뮬레이터 ─┐
+                 ├─▶ Kafka(target-tracking) → Target Tracking Service → WebSocket → 지휘 대시보드
+adsb.fi 폴링 ────┘                                   │                  ↓
+                                                PostgreSQL        [AI 위협 분석 - 비동기]
+                                                                        ↓
+                                                              pgvector 유사 패턴 검색
+                                                                        ↓
+                                                              Gemini (gemini-flash-lite-latest) → SITREP
+                                                     │
+                                                     └──▶ (별도 consumer group) threat-intel-ai-service
+                                                                    ↓
+                                                           Qdrant 이력 색인 + 문서 RAG
+                                                                    ↓
+                                                           LangGraph 라우팅 → /chat, /ingest/doc
 ```
 
 ## 🛠 기술 스택
@@ -69,6 +76,7 @@
 | Cache | Redis |
 | AI | Google Gemini (gemini-flash-lite-latest) (LLM), gemini-embedding-001 (임베딩) |
 | Vector Store | pgvector (HNSW 인덱스, 코사인 유사도) |
+| 실시간 데이터 | [opendata.adsb.fi](https://adsb.fi) 공개 ADS-B 피드 (개인/비상업 용도) |
 | Infra | K3s (Kubernetes), Docker |
 
 ## 📋 구현 현황
