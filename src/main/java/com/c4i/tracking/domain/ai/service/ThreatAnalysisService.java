@@ -157,11 +157,29 @@ public class ThreatAnalysisService {
         double speed = event.getSpeed();
         double altitude = event.getAltitude();
 
-        if ("MISSILE".equals(type)) return "CRITICAL";
-        if ("DRONE".equals(type) && speed > 250 && altitude < 100) return "CRITICAL";
-        if ("DRONE".equals(type) && altitude < 50) return "HIGH";
-        if ("AIRCRAFT".equals(type) && speed > 800 && altitude < 500) return "HIGH";
-        if (speed > 200) return "MEDIUM";
-        return "LOW";
+        String level;
+        if ("MISSILE".equals(type)) level = "CRITICAL";
+        else if ("DRONE".equals(type) && speed > 250 && altitude < 100) level = "CRITICAL";
+        else if ("DRONE".equals(type) && altitude < 50) level = "HIGH";
+        else if ("AIRCRAFT".equals(type) && speed > 800 && altitude < 500) level = "HIGH";
+        else if (speed > 200) level = "MEDIUM";
+        else level = "LOW";
+
+        // AdsbFiPollingService가 실제 군용기(adsb.fi /v2/mil 대조)로 확인한 표적은
+        // status="MILITARY"로 들어온다. 군용 자산이라는 사실만으로 CRITICAL을 단정하진
+        // 않되(순찰 중인 자국 헬기까지 전부 최고 등급으로 잡으면 무의미하니), 한 단계
+        // 올려서 "군용이라 더 주시해야 한다"는 정도로만 반영한다.
+        if ("MILITARY".equals(event.getStatus())) {
+            level = escalate(level);
+        }
+        return level;
+    }
+
+    private String escalate(String level) {
+        return switch (level) {
+            case "LOW" -> "MEDIUM";
+            case "MEDIUM" -> "HIGH";
+            default -> level; // HIGH/CRITICAL은 이미 최고 수준 근처라 그대로 둠
+        };
     }
 }

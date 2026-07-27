@@ -64,3 +64,17 @@ logging:
 
 server:
   port: 8080
+
+# opendata.adsb.fi 공개 ADS-B 피드 폴링 (AdsbFiPollingService). 개인/비상업적 용도로만
+# 이용 가능 -- https://adsb.fi 이용약관 참고, 대시보드/README에 출처 표시 필요.
+#
+# 중심 좌표 프리셋 (필요시 center-lat/center-lon/radius-nm만 바꿔서 다른 지역 감시):
+#   서울/수도권(기본값)        : 37.5665, 126.9780, radius 100nm
+#   우크라이나(키이우 인근)     : 50.4501, 30.5234, radius 150nm
+#   이란(테헤란 인근)          : 35.6892, 51.3890, radius 150nm
+adsb:
+  enabled: ${ADSB_ENABLED:false}
+  center-lat: ${ADSB_CENTER_LAT:37.5665}
+  center-lon: ${ADSB_CENTER_LON:126.9780}
+  radius-nm: ${ADSB_RADIUS_NM:100}
+  poll-interval-ms: ${ADSB_POLL_INTERVAL_MS:20000}
