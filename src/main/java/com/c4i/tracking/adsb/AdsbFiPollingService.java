@@ -9,6 +9,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.Set;
 
 /**
@@ -23,6 +25,11 @@ import java.util.Set;
  * 저고도 고속 AIRCRAFT → HIGH)이 실제 항공기에도 그대로 적용된다. 군용기로 확인되면
  * status="MILITARY"로 표시하고, 이는 규칙 엔진에서 등급을 한 단계 올리는 데 쓰인다
  * (자세한 내용은 ThreatAnalysisService 참고).
+ *
+ * adsb.fi 이용약관상 레이트리밋은 "초당 최대 1회"다. poll()이 매 주기마다 반경조회 +
+ * 군용기목록조회 두 요청을 거의 동시에 쏘면 한 주기 안에서 이 한도를 넘길 수 있어서,
+ * 군용기 목록은 별도 캐시로 분리해 훨씬 낮은 빈도(기본 2분)로만 갱신한다 -- 반경조회만
+ * 매 주기(기본 20초, 즉 초당 0.05회 수준으로 한도 대비 20배 이상 여유)마다 나간다.
  */
 @Slf4j
 @Component
@@ -44,11 +51,17 @@ public class AdsbFiPollingService {
     @Value("${adsb.radius-nm:100}")
     private int radiusNm;
 
+    @Value("${adsb.military-cache-ttl-ms:120000}")
+    private long militaryCacheTtlMs;
+
+    private volatile Set<String> militaryHexCache = Set.of();
+    private volatile Instant militaryCacheUpdatedAt = Instant.EPOCH;
+
     @Scheduled(fixedRateString = "${adsb.poll-interval-ms:20000}")
     public void poll() {
         if (!enabled) return;
 
-        Set<String> militaryHexes = adsbFiClient.fetchMilitaryHexes();
+        Set<String> militaryHexes = getMilitaryHexesCached();
         JsonNode aircraft = adsbFiClient.fetchAircraftNear(centerLat, centerLon, radiusNm);
 
         int published = 0;
@@ -58,8 +71,22 @@ public class AdsbFiPollingService {
             targetProducer.send(event);
             published++;
         }
-        log.info("[AdsbFi] 중심({}, {}) 반경 {}nm: {}대 발행 (군용 목록 {}대 대조)",
-            centerLat, centerLon, radiusNm, published, militaryHexes.size());
+        log.info("[AdsbFi] 중심({}, {}) 반경 {}nm: {}대 발행 (군용 캐시 {}대, 갱신 {}초 전)",
+            centerLat, centerLon, radiusNm, published, militaryHexes.size(),
+            Duration.between(militaryCacheUpdatedAt, Instant.now()).toSeconds());
+    }
+
+    /**
+     * 군용기 목록은 몇 분 단위로만 갱신해도 충분하다 (초 단위로 편성이 바뀌지 않음).
+     * 캐시가 신선하면 API를 아예 안 부른다 -- 이게 레이트리밋을 지키는 핵심 장치.
+     */
+    private Set<String> getMilitaryHexesCached() {
+        boolean stale = Duration.between(militaryCacheUpdatedAt, Instant.now()).toMillis() >= militaryCacheTtlMs;
+        if (stale) {
+            militaryHexCache = adsbFiClient.fetchMilitaryHexes();
+            militaryCacheUpdatedAt = Instant.now();
+        }
+        return militaryHexCache;
     }
 
     private TargetEvent toTargetEvent(JsonNode ac, Set<String> militaryHexes) {
