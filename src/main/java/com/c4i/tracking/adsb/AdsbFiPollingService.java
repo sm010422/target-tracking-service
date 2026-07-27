@@ -43,10 +43,12 @@ public class AdsbFiPollingService {
      */
     private record Region(String code, String label, double lat, double lon, int radiusNm) {}
 
+    // 우크라이나/이란은 반경을 API 최대치(250nm)로 잡아도 커버리지가 거의 없다 --
+    // 실측으로 확인함(아래 4항 참고). 한국은 100nm로도 충분히 밀집도가 높아 그대로 둔다.
     private static final List<Region> REGIONS = List.of(
         new Region("KOREA", "대한민국(수도권)", 37.5665, 126.9780, 100),
-        new Region("UKRAINE", "우크라이나(키이우)", 50.4501, 30.5234, 150),
-        new Region("IRAN", "이란(테헤란)", 35.6892, 51.3890, 150)
+        new Region("UKRAINE", "우크라이나(키이우)", 50.4501, 30.5234, 250),
+        new Region("IRAN", "이란(테헤란)", 35.6892, 51.3890, 250)
     );
 
     // 지역 간 호출 사이 대기시간 -- adsb.fi 초당 1회 한도를 여유 있게 지키기 위함.
