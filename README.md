@@ -32,7 +32,7 @@
 
 ### 4. 🤖 AI 위협 분석 (RAG + pgvector)
 - **벡터 유사도 검색**: pgvector HNSW 인덱스로 감지된 표적의 비행 패턴을 위협 지식 베이스와 실시간 비교
-- **RAG 파이프라인**: 유사 위협 패턴 3개를 컨텍스트로 Gemini 2.5 Flash에 전달하여 전술 상황보고서(SITREP) 자동 생성
+- **RAG 파이프라인**: 유사 위협 패턴 3개를 컨텍스트로 Gemini (gemini-flash-lite-latest)에 전달하여 전술 상황보고서(SITREP) 자동 생성
 - **비동기 분석**: Kafka Consumer의 WebSocket 전송을 블로킹하지 않는 별도 스레드풀 운용
 - **Graceful Degradation**: API 키 미설정 시 규칙 기반 위협 등급(CRITICAL/HIGH/MEDIUM/LOW)으로 자동 폴백
 
@@ -49,7 +49,7 @@
                          │                                             ↓
                          │                                    pgvector 유사 패턴 검색
                          │                                             ↓
-                         │                                    Gemini 2.5 Flash → SITREP
+                         │                                    Gemini (gemini-flash-lite-latest) → SITREP
                          │
                          └──▶ (별도 consumer group) threat-intel-ai-service
                                        ↓
@@ -67,7 +67,7 @@
 | Message Queue | Apache Kafka |
 | Database | PostgreSQL + pgvector |
 | Cache | Redis |
-| AI | Google Gemini 2.5 Flash (LLM), gemini-embedding-001 (임베딩) |
+| AI | Google Gemini (gemini-flash-lite-latest) (LLM), gemini-embedding-001 (임베딩) |
 | Vector Store | pgvector (HNSW 인덱스, 코사인 유사도) |
 | Infra | K3s (Kubernetes), Docker |
 

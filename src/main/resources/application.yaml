@@ -8,7 +8,7 @@ spring:
         api-key: ${GEMINI_API_KEY:PLACEHOLDER}
         chat:
           options:
-            model: gemini-2.5-flash
+            model: gemini-flash-lite-latest
         embedding:
           api-key: ${GEMINI_API_KEY:PLACEHOLDER}
           text:

@@ -8,7 +8,7 @@
 
 | 역할 | 기술 |
 |------|------|
-| LLM (SITREP 생성) | Google Gemini 2.5 Flash |
+| LLM (SITREP 생성) | Google Gemini (gemini-flash-lite-latest) |
 | 임베딩 모델 | Google gemini-embedding-001 (1536차원) |
 | 벡터 DB | PostgreSQL + pgvector (HNSW 인덱스) |
 | AI 프레임워크 | Spring AI 1.1.8 |
@@ -32,7 +32,7 @@
    [현재 표적] + [유사 패턴 3개] + [규칙 기반 위협 등급]
         │
         ▼
-④ Gemini 2.5 Flash → SITREP 생성
+④ Gemini (gemini-flash-lite-latest) → SITREP 생성
    - 상황 요약
    - 위협 평가
    - 권고 조치 (3가지 이내)
