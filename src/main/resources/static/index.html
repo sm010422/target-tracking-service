@@ -87,6 +87,19 @@
             color: #ffff00;
         }
 
+        .target-card .analyze-btn {
+            margin-top: 4px;
+            width: 100%;
+            background: #001a00;
+            color: #00ff41;
+            border: 1px solid #00ff41;
+            font-family: monospace;
+            font-size: 11px;
+            padding: 4px;
+            cursor: pointer;
+        }
+        .target-card .analyze-btn:hover { background: #00ff41; color: #001a00; }
+
         #log {
             margin-top: 10px;
             font-size: 11px;
@@ -96,6 +109,124 @@
             border-top: 1px solid #00ff41;
             padding-top: 5px;
         }
+
+        /* ── AI 위협분석 모달 ───────────────────────────────── */
+        #analysis-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        #analysis-box {
+            width: 480px;
+            max-height: 80vh;
+            overflow-y: auto;
+            background: #001a00;
+            border: 1px solid #00ff41;
+            padding: 16px;
+            font-size: 12px;
+        }
+        #analysis-box h2 {
+            font-size: 14px;
+            border-bottom: 1px solid #00ff41;
+            padding-bottom: 8px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+        #analysis-box .close-btn {
+            cursor: pointer;
+            color: #00ff41;
+            background: none;
+            border: none;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        .threat-level {
+            display: inline-block;
+            padding: 4px 10px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            border: 1px solid currentColor;
+        }
+        .threat-CRITICAL { color: #ff3333; }
+        .threat-HIGH { color: #ff9900; }
+        .threat-MEDIUM { color: #ffff00; }
+        .threat-LOW { color: #00ff41; }
+        #analysis-box .sitrep {
+            white-space: pre-wrap;
+            border: 1px solid #008f11;
+            padding: 8px;
+            margin-bottom: 10px;
+            color: #00ff41;
+        }
+        #analysis-box ul { list-style: none; padding-left: 0; }
+        #analysis-box li { padding: 4px 0; border-bottom: 1px dashed #003300; color: #008f11; }
+
+        /* ── AI 챗봇 패널 ───────────────────────────────────── */
+        #chat-panel {
+            display: none;
+            position: fixed;
+            right: 0;
+            top: 45px;
+            bottom: 0;
+            width: 340px;
+            background: #001a00;
+            border-left: 1px solid #00ff41;
+            z-index: 900;
+            flex-direction: column;
+        }
+        #chat-panel-header {
+            padding: 8px 10px;
+            border-bottom: 1px solid #00ff41;
+            font-size: 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        #chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            font-size: 12px;
+        }
+        .chat-msg { margin-bottom: 12px; }
+        .chat-msg.chat-user { color: #ffff00; }
+        .chat-msg.chat-assistant { color: #00ff41; }
+        .chat-msg .chat-role { font-size: 10px; opacity: 0.7; margin-bottom: 2px; }
+        .chat-msg .chat-meta { font-size: 10px; color: #008f11; min-height: 12px; }
+        .chat-msg .chat-text { white-space: pre-wrap; line-height: 1.5; }
+        .chat-msg .chat-tool { font-size: 10px; color: #ff9900; margin-top: 4px; }
+        .chat-msg .chat-sources { font-size: 10px; color: #008f11; margin-top: 4px; }
+        .chat-msg .chat-sources ul { list-style: none; padding-left: 0; }
+        #chat-input-row {
+            display: flex;
+            border-top: 1px solid #00ff41;
+            padding: 8px;
+            gap: 6px;
+        }
+        #chat-input {
+            flex: 1;
+            background: #0a0a0a;
+            color: #00ff41;
+            border: 1px solid #00ff41;
+            font-family: monospace;
+            padding: 6px;
+            font-size: 12px;
+        }
+        #chat-send {
+            background: #001a00;
+            color: #00ff41;
+            border: 1px solid #00ff41;
+            font-family: monospace;
+            padding: 6px 10px;
+            cursor: pointer;
+        }
+        #chat-send:hover { background: #00ff41; color: #001a00; }
+        #chat-send:disabled { opacity: 0.5; cursor: not-allowed; }
     </style>
 </head>
 <body>
@@ -106,6 +237,7 @@
         <span id="status">🔴 연결 중...</span>
         <label>회수 <input type="number" id="rounds" value="1" min="1" max="50"></label>
         <button id="run-btn" onclick="runSimulation()">▶ 시뮬레이션 실행</button>
+        <button id="chat-toggle-btn" onclick="toggleChatPanel()">🤖 AI 챗봇</button>
     </div>
 </div>
 
@@ -115,6 +247,30 @@
         <h2>🎯 탐지 표적 현황</h2>
         <div id="target-list"></div>
         <div id="log"></div>
+    </div>
+</div>
+
+<!-- AI 위협분석 모달 (target-tracking-service 자체 RAG: pgvector 고정 지식베이스 비교) -->
+<div id="analysis-modal" onclick="if(event.target===this) closeAnalysisModal()">
+    <div id="analysis-box">
+        <h2>
+            <span>🛡️ AI 위협 분석 (RAG + pgvector)</span>
+            <button class="close-btn" onclick="closeAnalysisModal()">✕</button>
+        </h2>
+        <div id="analysis-body">분석 중...</div>
+    </div>
+</div>
+
+<!-- AI 챗봇 패널 (threat-intel-ai-service: 문서 RAG + Kafka 이력 기반 패턴 검색, LangGraph 라우팅) -->
+<div id="chat-panel">
+    <div id="chat-panel-header">
+        <span>🤖 threat-intel-ai-service</span>
+        <button class="close-btn" onclick="toggleChatPanel()">✕</button>
+    </div>
+    <div id="chat-messages"></div>
+    <div id="chat-input-row">
+        <input id="chat-input" type="text" placeholder="교리 문서 / 과거 이력 질문..." onkeydown="if(event.key==='Enter') sendChatMessage()">
+        <button id="chat-send" onclick="sendChatMessage()">전송</button>
     </div>
 </div>
 
@@ -134,9 +290,10 @@
         iconAnchor: [12, 12]
     });
 
-    const targets = {};   // 마커 저장
-    const paths = {};     // 경로선 저장
-    const coords = {};    // 좌표 이력
+    const targets = {};    // 마커 저장
+    const paths = {};      // 경로선 저장
+    const coords = {};     // 좌표 이력
+    const targetData = {}; // 표적별 최신 원본 데이터 (AI 위협분석 호출용)
 
     // WebSocket 연결
     const socket = new SockJS('/ws');
@@ -155,6 +312,8 @@
     });
 
     function updateTarget(t) {
+        targetData[t.targetId] = t;
+
         const lat = t.latitude;
         const lng = t.longitude;
 
@@ -214,6 +373,7 @@
             <div>고도: ${t.altitude.toFixed(1)}m</div>
             <div>속도: ${t.speed.toFixed(1)}km/h</div>
             <div>상태: <span style="color:#ffff00">${t.status}</span></div>
+            <button class="analyze-btn" onclick="analyzeTarget('${t.targetId}')">🔍 AI 위협분석</button>
         `;
     }
 
@@ -237,6 +397,181 @@
         } finally {
             btn.disabled = false;
         }
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str == null ? '' : String(str);
+        return div.innerHTML;
+    }
+
+    // ── AI 위협 분석 (target-tracking-service 자체 RAG: /api/v1/threat-analysis/analyze) ──
+
+    async function analyzeTarget(targetId) {
+        const t = targetData[targetId];
+        if (!t) return;
+
+        const modal = document.getElementById('analysis-modal');
+        const body = document.getElementById('analysis-body');
+        body.innerHTML = '분석 중...';
+        modal.style.display = 'flex';
+
+        try {
+            const res = await fetch('/api/v1/threat-analysis/analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    targetId: t.targetId,
+                    targetType: t.targetType,
+                    latitude: t.latitude,
+                    longitude: t.longitude,
+                    altitude: t.altitude,
+                    speed: t.speed,
+                    status: t.status
+                })
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            renderAnalysis(await res.json());
+        } catch (e) {
+            body.innerHTML = `분석 요청 실패: ${escapeHtml(String(e))}`;
+        }
+    }
+
+    function renderAnalysis(data) {
+        const body = document.getElementById('analysis-body');
+
+        if (!data.aiEnabled) {
+            body.innerHTML = `
+                <div class="threat-level threat-${escapeHtml(data.threatLevel)}">${escapeHtml(data.threatLevel)}</div>
+                <div>AI 비활성화 상태 — GEMINI_API_KEY 미설정, 규칙 기반 등급만 표시됩니다.</div>
+            `;
+            return;
+        }
+
+        const similar = (data.similarPatterns || [])
+            .map(p => `<li>${escapeHtml(p)}</li>`)
+            .join('');
+
+        body.innerHTML = `
+            <div class="threat-level threat-${escapeHtml(data.threatLevel)}">${escapeHtml(data.threatLevel)}</div>
+            <div class="sitrep">${escapeHtml(data.sitrep)}</div>
+            <h3 style="font-size:12px;margin-bottom:6px;">유사 위협 패턴 (pgvector)</h3>
+            <ul>${similar || '<li>일치하는 패턴 없음</li>'}</ul>
+        `;
+    }
+
+    function closeAnalysisModal() {
+        document.getElementById('analysis-modal').style.display = 'none';
+    }
+
+    // ── AI 챗봇 (threat-intel-ai-service: /ai/chat, SSE 스트리밍) ──
+
+    let chatStreaming = false;
+
+    function toggleChatPanel() {
+        const panel = document.getElementById('chat-panel');
+        const opening = panel.style.display !== 'flex';
+        panel.style.display = opening ? 'flex' : 'none';
+        if (opening && document.getElementById('chat-messages').children.length === 0) {
+            appendChatMessage('assistant', '안녕하세요. 위협 인텔 문서나 과거 표적 탐지 이력에 대해 물어보세요.\n예) "저고도 자폭 드론 대응 절차는?", "DRONE-001 과거 탐지 이력 있나?"');
+        }
+    }
+
+    function appendChatMessage(role, text) {
+        const list = document.getElementById('chat-messages');
+        const el = document.createElement('div');
+        el.className = `chat-msg chat-${role}`;
+        el.innerHTML = `
+            <div class="chat-role">${role === 'user' ? '나' : 'AI'}</div>
+            <div class="chat-meta"></div>
+            <div class="chat-text">${escapeHtml(text)}</div>
+            <div class="chat-tool"></div>
+            <div class="chat-sources"></div>
+        `;
+        list.appendChild(el);
+        list.scrollTop = list.scrollHeight;
+        return el;
+    }
+
+    async function sendChatMessage() {
+        if (chatStreaming) return;
+        const input = document.getElementById('chat-input');
+        const question = input.value.trim();
+        if (!question) return;
+        input.value = '';
+
+        appendChatMessage('user', question);
+        const assistantEl = appendChatMessage('assistant', '');
+
+        chatStreaming = true;
+        document.getElementById('chat-send').disabled = true;
+
+        try {
+            const res = await fetch('/ai/chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ question })
+            });
+            if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+
+                const blocks = buffer.split('\n\n');
+                buffer = blocks.pop(); // 아직 안 끝난 마지막 조각은 다음 루프로
+
+                for (const block of blocks) {
+                    handleSseBlock(block, assistantEl);
+                }
+            }
+        } catch (e) {
+            assistantEl.querySelector('.chat-text').innerHTML += `\n[오류: ${escapeHtml(String(e))}]`;
+        } finally {
+            chatStreaming = false;
+            document.getElementById('chat-send').disabled = false;
+            document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+        }
+    }
+
+    function handleSseBlock(block, assistantEl) {
+        let eventName = 'message';
+        let dataStr = null;
+
+        for (const line of block.split('\n')) {
+            if (line.startsWith('event:')) eventName = line.slice(6).trim();
+            else if (line.startsWith('data:')) dataStr = line.slice(5).trim();
+        }
+        if (dataStr === null) return;
+
+        let data;
+        try { data = JSON.parse(dataStr); } catch { return; }
+
+        if (eventName === 'route') {
+            assistantEl.querySelector('.chat-meta').textContent =
+                data.route === 'doc_rag' ? '[📄 문서 검색 중...]' : '[📡 과거 이력 검색 중...]';
+        } else if (eventName === 'tool_call') {
+            assistantEl.querySelector('.chat-tool').textContent =
+                `🔧 도구 호출: ${data.tool_name} → ${data.tool_result}`;
+        } else if (eventName === 'sources') {
+            const items = (data || [])
+                .map(s => `<li>score ${s.score.toFixed(2)} — ${escapeHtml(s.text.slice(0, 60))}...</li>`)
+                .join('');
+            assistantEl.querySelector('.chat-sources').innerHTML = items ? `출처<ul>${items}</ul>` : '';
+        } else if (eventName === 'error') {
+            assistantEl.querySelector('.chat-text').innerHTML += `\n[오류: ${escapeHtml(data.message)}]`;
+        } else if (eventName === 'done') {
+            assistantEl.querySelector('.chat-meta').textContent = '';
+        } else if (data && typeof data.token === 'string') {
+            assistantEl.querySelector('.chat-text').innerHTML += escapeHtml(data.token);
+        }
+
+        document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
     }
 </script>
 </body>
