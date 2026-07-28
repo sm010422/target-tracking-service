@@ -44,6 +44,15 @@ public class ThreatAnalysisService {
     @Value("${spring.ai.google.genai.api-key:PLACEHOLDER}")
     private String apiKey;
 
+    // 기본값 false -- 군용기(status=MILITARY)처럼 반경 안에 계속 머무는 표적이
+    // 있으면 이 자동분석이 30분 쿨다운마다 조용히 계속 Gemini를 불러서, 무료
+    // tier 일일 임베딩 한도(1000건)를 사용자가 버튼 한 번 안 눌러도 다 써버리는
+    // 걸 실측으로 확인했다 (ai.auto-analysis.enabled=false가 기본).
+    // true로 켜면 원래 의도대로 "AI가 고위험 표적을 먼저 찾아서 알려주는" 프로액티브
+    // 감시가 복원된다 -- 유료 tier로 옮기거나 데모할 때만 켜는 걸 권장.
+    @Value("${ai.auto-analysis.enabled:false}")
+    private boolean autoAnalysisEnabled;
+
     public boolean isAiEnabled() {
         return apiKey != null && !apiKey.isBlank() && !"PLACEHOLDER".equals(apiKey);
     }
@@ -83,6 +92,7 @@ public class ThreatAnalysisService {
      */
     @Async("aiAnalysisExecutor")
     public void analyzeAsync(TargetEvent event) {
+        if (!autoAnalysisEnabled) return;
         if (!isAiEnabled()) return;
         if (!shouldAnalyze(event.getTargetId())) return;
         if (!warrantsAiAnalysis(event)) return;
