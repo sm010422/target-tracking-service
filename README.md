@@ -47,6 +47,12 @@
 - 중심 좌표/반경을 설정으로 분리해서, 수도권뿐 아니라 우크라이나·이란 등 분쟁지역의 공개 항공 트래픽 감시로도 전환 가능
 - adsb.fi 데이터는 개인/비상업적 용도로만 이용 가능 (ODbL 같은 완전 오픈 라이선스 아님) — 대시보드 하단에 출처 표시
 
+### 7. 🛡️ Human-in-the-loop 승인 루프
+- AI가 HIGH/CRITICAL로 판정하면 자동으로 승인 대기 항목이 생성되고, 담당자가 대시보드에서 승인/반려 결정
+- 결정자·사유·결정 시각이 함께 기록되어 감사 로그 역할을 겸함
+- `/topic/approvals` WebSocket으로 승인 요청 생성·결정을 실시간 브로드캐스트
+- 자세한 내용 → [docs/threat-approval.md](./docs/threat-approval.md)
+
 ## 🏗 시스템 아키텍처
 ```
 드론 시뮬레이터 ─┐
@@ -90,6 +96,7 @@ adsb.fi 폴링 ────┘                                   │            
   - [x] RAG 파이프라인 (유사 패턴 검색 → LLM SITREP 생성)
   - [x] 비동기 처리로 WebSocket 실시간성 보장
   - [x] API 키 미설정 시 규칙 기반 Graceful Degradation
+- [x] **Human-in-the-loop 승인 루프** (HIGH/CRITICAL 자동 승인 요청 → 승인/반려 → 감사 로그)
 - [ ] Kafka Producer/Consumer 연동
 - [ ] WebSocket 실시간 통신
 - [ ] 드론 시뮬레이터

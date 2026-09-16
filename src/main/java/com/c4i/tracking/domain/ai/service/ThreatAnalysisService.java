@@ -1,6 +1,7 @@
 package com.c4i.tracking.domain.ai.service;
 
 import com.c4i.tracking.domain.ai.dto.ThreatAnalysisDto;
+import com.c4i.tracking.domain.approval.service.ThreatApprovalService;
 import com.c4i.tracking.kafka.TargetEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,7 @@ public class ThreatAnalysisService {
 
     private final VectorStore vectorStore;
     private final ChatModel chatModel;
+    private final ThreatApprovalService threatApprovalService;
     private final Map<String, Instant> lastAnalyzedAt = new ConcurrentHashMap<>();
 
     @Value("${spring.ai.google.genai.api-key:PLACEHOLDER}")
@@ -107,9 +109,18 @@ public class ThreatAnalysisService {
     }
 
     /**
-     * REST API에서 호출하는 동기 분석.
+     * REST API에서 호출하는 동기 분석. HIGH/CRITICAL 판정이면 사람 승인이 필요한
+     * 의사결정 루프(ThreatApprovalService)로 넘긴다 -- SITREP을 보여주는 데서
+     * 끝나지 않고 실제 승인/반려 조치로 이어지도록 하기 위함.
      */
     public ThreatAnalysisDto.Response analyze(TargetEvent event) {
+        ThreatAnalysisDto.Response response = doAnalyze(event);
+        threatApprovalService.createIfNeeded(
+            response.getTargetId(), response.getTargetType(), response.getThreatLevel(), response.getSitrep());
+        return response;
+    }
+
+    private ThreatAnalysisDto.Response doAnalyze(TargetEvent event) {
         String targetDescription = buildDescription(event);
         String ruleBasedLevel = calculateRuleBasedThreatLevel(event);
 
