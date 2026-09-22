@@ -1,15 +1,16 @@
 {
   "docs/ai-analysis.md": "3e250b17-ecd1-8162-a682-c841d5d45565",
   "docs/architecture.md": "3e250b17-ecd1-81a7-a18e-dbcfb9dc9a23",
-  "docs/dashboard-data-and-ai-audit.md": "3e250b17-ecd1-8185-96dd-c11809db81a2",
-  "docs/dev-setup.md": "3e250b17-ecd1-8119-b162-d2fe305c7b09",
-  "docs/threat-approval.md": "3e250b17-ecd1-815c-8776-e897383eb273",
-  "docs/wetsocket.md": "3e250b17-ecd1-8148-ba4d-e84dcff5abd6",
   "docs/concepts/01-docker-containerization.md": "3e250b17-ecd1-81b6-b543-cc8a63fdbed0",
   "docs/concepts/02-spring-boot-config-and-ai-abstraction.md": "3e250b17-ecd1-812c-9f06-e877a9d0cffc",
   "docs/concepts/03-dashboard-ai-integration.md": "3e250b17-ecd1-817e-a166-ec4bd82813dd",
   "docs/concepts/04-adsb-fi-live-feed-integration.md": "3e250b17-ecd1-81fc-a2fe-d584b595ad54",
   "docs/concepts/05-frontend-split-to-vercel.md": "3e250b17-ecd1-81df-8216-c66fede1cf86",
   "docs/concepts/06-heading-multi-region-and-adsb-coverage-limits.md": "3e250b17-ecd1-81a3-b892-f920cec6439c",
-  "docs/concepts/07-gemini-quota-incident-and-on-demand-ai-analysis.md": "3e250b17-ecd1-815b-855d-f17562760709"
+  "docs/concepts/07-gemini-quota-incident-and-on-demand-ai-analysis.md": "3e250b17-ecd1-815b-855d-f17562760709",
+  "docs/dashboard-data-and-ai-audit.md": "3e250b17-ecd1-8185-96dd-c11809db81a2",
+  "docs/dev-setup.md": "3e250b17-ecd1-8119-b162-d2fe305c7b09",
+  "docs/observability.md": "3e350b17-ecd1-8114-8638-f1b525590d75",
+  "docs/threat-approval.md": "3e250b17-ecd1-815c-8776-e897383eb273",
+  "docs/wetsocket.md": "3e250b17-ecd1-8148-ba4d-e84dcff5abd6"
 }
