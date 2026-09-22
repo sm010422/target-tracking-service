@@ -4,12 +4,16 @@ import com.c4i.tracking.common.exception.ApprovalNotFoundException;
 import com.c4i.tracking.domain.approval.dto.ThreatApprovalDto;
 import com.c4i.tracking.domain.approval.entity.ThreatApproval;
 import com.c4i.tracking.domain.approval.repository.ThreatApprovalRepository;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Set;
 
@@ -28,6 +32,7 @@ public class ThreatApprovalService {
 
     private final ThreatApprovalRepository repository;
     private final SimpMessagingTemplate messagingTemplate;
+    private final MeterRegistry meterRegistry;
 
     @Transactional
     public void createIfNeeded(String targetId, String targetType, String threatLevel, String sitrep) {
@@ -49,6 +54,11 @@ public class ThreatApprovalService {
         repository.save(approval);
 
         log.info("[ThreatApproval] 승인 요청 생성: targetId={}, threatLevel={}", targetId, threatLevel);
+        Counter.builder("threat_approval_requested_total")
+            .description("생성된 승인 요청 수")
+            .tag("threatLevel", threatLevel)
+            .register(meterRegistry)
+            .increment();
         messagingTemplate.convertAndSend("/topic/approvals", ThreatApprovalDto.Response.from(approval));
     }
 
@@ -74,9 +84,22 @@ public class ThreatApprovalService {
             throw new IllegalArgumentException("decision은 APPROVED 또는 REJECTED만 허용됩니다: " + decision);
         }
 
+        var requestedAt = approval.getRequestedAt();
         approval.decide(decision, request.getDecidedBy(), request.getReason());
         log.info("[ThreatApproval] 승인 결정: id={}, targetId={}, decision={}, decidedBy={}",
             id, approval.getTargetId(), decision, request.getDecidedBy());
+
+        Counter.builder("threat_approval_decided_total")
+            .description("결정 완료된 승인 요청 수")
+            .tag("decision", decision)
+            .register(meterRegistry)
+            .increment();
+        // 요청 생성 -> 사람이 실제로 결정하기까지 걸린 시간. 담당자가 승인 대기열을
+        // 얼마나 빨리 처리하는지 보여주는 지표라 human-in-the-loop 루프의 핵심 관측값.
+        Timer.builder("threat_approval_time_to_decision_seconds")
+            .description("승인 요청 생성부터 사람이 결정하기까지 걸린 시간")
+            .register(meterRegistry)
+            .record(Duration.between(requestedAt, approval.getDecidedAt()));
 
         ThreatApprovalDto.Response response = ThreatApprovalDto.Response.from(approval);
         messagingTemplate.convertAndSend("/topic/approvals", response);

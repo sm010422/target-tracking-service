@@ -53,6 +53,10 @@
 - `/topic/approvals` WebSocket으로 승인 요청 생성·결정을 실시간 브로드캐스트
 - 자세한 내용 → [docs/threat-approval.md](./docs/threat-approval.md)
 
+### 8. 📊 Prometheus 계측
+- `/actuator/prometheus`에서 AI 분석 결과(성공/실패/비활성화)와 승인 결정 소요 시간 등 커스텀 지표 노출
+- 자세한 내용 → [docs/observability.md](./docs/observability.md)
+
 ## 🏗 시스템 아키텍처
 ```
 드론 시뮬레이터 ─┐
@@ -97,6 +101,7 @@ adsb.fi 폴링 ────┘                                   │            
   - [x] 비동기 처리로 WebSocket 실시간성 보장
   - [x] API 키 미설정 시 규칙 기반 Graceful Degradation
 - [x] **Human-in-the-loop 승인 루프** (HIGH/CRITICAL 자동 승인 요청 → 승인/반려 → 감사 로그)
+- [x] **Prometheus 계측** (`/actuator/prometheus`, AI 분석/승인 결정 커스텀 지표)
 - [ ] Kafka Producer/Consumer 연동
 - [ ] WebSocket 실시간 통신
 - [ ] 드론 시뮬레이터

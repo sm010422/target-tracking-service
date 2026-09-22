@@ -3,6 +3,9 @@ package com.c4i.tracking.domain.ai.service;
 import com.c4i.tracking.domain.ai.dto.ThreatAnalysisDto;
 import com.c4i.tracking.domain.approval.service.ThreatApprovalService;
 import com.c4i.tracking.kafka.TargetEvent;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.ai.chat.model.ChatModel;
@@ -41,6 +44,7 @@ public class ThreatAnalysisService {
     private final VectorStore vectorStore;
     private final ChatModel chatModel;
     private final ThreatApprovalService threatApprovalService;
+    private final MeterRegistry meterRegistry;
     private final Map<String, Instant> lastAnalyzedAt = new ConcurrentHashMap<>();
 
     @Value("${spring.ai.google.genai.api-key:PLACEHOLDER}")
@@ -125,6 +129,7 @@ public class ThreatAnalysisService {
         String ruleBasedLevel = calculateRuleBasedThreatLevel(event);
 
         if (!isAiEnabled()) {
+            recordOutcome("disabled");
             return ThreatAnalysisDto.Response.builder()
                 .targetId(event.getTargetId())
                 .targetType(event.getTargetType())
@@ -151,6 +156,7 @@ public class ThreatAnalysisService {
 
             // Step 2: Augmented Generation — 유사 패턴을 컨텍스트로 LLM SITREP 생성
             String sitrep = generateSitrep(targetDescription, similarPatterns, ruleBasedLevel);
+            recordOutcome("success");
 
             return ThreatAnalysisDto.Response.builder()
                 .targetId(event.getTargetId())
@@ -168,6 +174,7 @@ public class ThreatAnalysisService {
             // 이걸 그냥 HTTP 500으로 던지는 대신, 규칙 기반 등급이라도 정상적으로 보여준다.
             log.warn("[ThreatAI] LLM 호출 실패 (쿼터/네트워크), 규칙 기반 등급으로 대체: targetId={}, error={}",
                 event.getTargetId(), e.getMessage());
+            recordOutcome("failure");
             return ThreatAnalysisDto.Response.builder()
                 .targetId(event.getTargetId())
                 .targetType(event.getTargetType())
@@ -202,7 +209,21 @@ public class ThreatAnalysisService {
             3. 권고 조치: (즉각 취해야 할 행동 3가지 이내)
             """.formatted(description, threatLevel, context);
 
-        return chatModel.call(prompt);
+        return Timer.builder("threat_ai_llm_call_duration_seconds")
+            .description("Gemini SITREP 생성 호출 소요 시간")
+            .register(meterRegistry)
+            .record(() -> chatModel.call(prompt));
+    }
+
+    // Gemini 무료 tier 쿼터(429)에 실제로 걸린 이력이 있어서(docs/ai-analysis.md 참고),
+    // disabled/success/failure를 구분해두면 "지금 쿼터가 바닥나서 규칙 기반으로만
+    // 도는 중인가"를 로그를 뒤지지 않고 /actuator/prometheus 한 번으로 확인할 수 있다.
+    private void recordOutcome(String result) {
+        Counter.builder("threat_ai_analysis_total")
+            .description("AI 위협 분석 결과 (disabled/success/failure)")
+            .tag("result", result)
+            .register(meterRegistry)
+            .increment();
     }
 
     private String buildDescription(TargetEvent event) {

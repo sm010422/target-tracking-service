@@ -65,6 +65,23 @@ logging:
 server:
   port: 8080
 
+# /actuator/health는 K8s liveness/readiness 프로브가 이미 사용 중 (deployment.yaml).
+# /actuator/prometheus는 새로 추가 -- 클러스터에 Prometheus 서버를 새로 올리는 대신
+# (worker 노드가 이미 메모리 70%대라 여유가 없음, k3s-msa-infrastructure/docs 참고)
+# 일단 앱 쪽에서 scrape 가능한 포맷으로 노출만 해둔다.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
+
 # opendata.adsb.fi 공개 ADS-B 피드 폴링 (AdsbFiPollingService). 개인/비상업적 용도로만
 # 이용 가능 -- https://adsb.fi 이용약관 참고, 대시보드/README에 출처 표시 필요.
 #
