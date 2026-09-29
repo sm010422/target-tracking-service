@@ -84,9 +84,15 @@ public class ThreatAnalysisService {
      * 규칙 기반 등급만 적용한다 -- 어차피 실시간 SITREP까지 필요한 케이스가
      * 아니다. DRONE/MISSILE(가짜 시뮬레이터, 개체 수가 적음)과 군용기/이례적으로
      * 위험한 민항기(HIGH 이상)는 그대로 전부 분석한다.
+     *
+     * 2026-09-29: AisStreamService로 SHIP 타입이 추가되면서, 이 필터를 AIRCRAFT
+     * 전용에서 "실시간 공개 피드로 대량 유입되는 타입 전체"로 일반화했다. 안 그러면
+     * 한국 연안 AIS 트래픽이 예전 ADS-B 민항기 폭주(쿼터 429) 때와 똑같은 문제를
+     * 재현할 게 뻔했다 -- DRONE/MISSILE만 원래 로직대로 무조건 분석한다.
      */
     private boolean warrantsAiAnalysis(TargetEvent event) {
-        if (!"AIRCRAFT".equals(event.getTargetType())) return true;
+        String type = event.getTargetType();
+        if ("DRONE".equals(type) || "MISSILE".equals(type)) return true;
         if ("MILITARY".equals(event.getStatus())) return true;
         String level = calculateRuleBasedThreatLevel(event);
         return "HIGH".equals(level) || "CRITICAL".equals(level);
@@ -248,6 +254,13 @@ public class ThreatAnalysisService {
         else if ("DRONE".equals(type) && speed > 250 && altitude < 100) level = "CRITICAL";
         else if ("DRONE".equals(type) && altitude < 50) level = "HIGH";
         else if ("AIRCRAFT".equals(type) && speed > 800 && altitude < 500) level = "HIGH";
+        // AIS는 targetId가 곧 MMSI(9자리 숫자)다. 형식이 안 맞으면 송신국이 신원을
+        // 확인할 수 없는 상태(설정 오류 또는 의도적 스푸핑) -- 실제 해상보안 감시에서
+        // 쓰는 AIS 이상탐지 관점을 규칙으로 옮긴 것.
+        else if ("SHIP".equals(type) && !event.getTargetId().matches("\\d{9}")) level = "HIGH";
+        // 상선 순항 속도는 보통 30km/h 안팎이라, 60km/h를 넘는 "선박"은 소형 고속정
+        // 패턴에 가까워 주의가 필요하다고 판단.
+        else if ("SHIP".equals(type) && speed > 60) level = "MEDIUM";
         else if (speed > 200) level = "MEDIUM";
         else level = "LOW";
 

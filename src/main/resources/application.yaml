@@ -104,3 +104,11 @@ adsb:
 ai:
   auto-analysis:
     enabled: ${AI_AUTO_ANALYSIS_ENABLED:false}
+
+# aisstream.io 실시간 AIS(선박) 피드 (AisStreamService). REST가 아니라 WebSocket
+# 전용 API라 무료 이용에도 사전 가입 후 발급받는 API 키가 필요함(adsb.fi와 다른 점).
+# bounding box(한국 연안)는 코드에 고정값으로 둠 -- AdsbFiPollingService의 REGIONS와
+# 동일한 이유로, 지역을 바꿀 일이 거의 없어서 설정보다는 코드가 더 명확하다고 판단.
+ais:
+  enabled: ${AIS_ENABLED:false}
+  api-key: ${AIS_STREAM_API_KEY:}

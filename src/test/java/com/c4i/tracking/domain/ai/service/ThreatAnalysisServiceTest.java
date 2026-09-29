@@ -58,7 +58,9 @@ class ThreatAnalysisServiceTest {
             Arguments.of("DRONE", 30.0, 100.0, "DETECTED", "HIGH"),
             Arguments.of("AIRCRAFT", 400.0, 850.0, "DETECTED", "HIGH"),
             Arguments.of("AIRCRAFT", 5000.0, 250.0, "DETECTED", "MEDIUM"),
-            Arguments.of("AIRCRAFT", 5000.0, 100.0, "DETECTED", "LOW")
+            Arguments.of("AIRCRAFT", 5000.0, 100.0, "DETECTED", "LOW"),
+            Arguments.of("SHIP", 0.0, 20.0, "DETECTED", "LOW"),
+            Arguments.of("SHIP", 0.0, 80.0, "DETECTED", "MEDIUM")
         );
     }
 
@@ -67,13 +69,25 @@ class ThreatAnalysisServiceTest {
     @DisplayName("규칙 기반 위협 등급을 표 그대로 산출한다")
     void calculatesRuleBasedThreatLevel(String type, double altitude, double speed, String status, String expected) {
         TargetEvent event = TargetEvent.builder()
-            .targetId("T-1").targetType(type).latitude(37.5).longitude(127.0)
+            .targetId("123456789").targetType(type).latitude(37.5).longitude(127.0)
             .altitude(altitude).speed(speed).status(status).build();
 
         ThreatAnalysisDto.Response response = threatAnalysisService.analyze(event);
 
         assertThat(response.getThreatLevel()).isEqualTo(expected);
         assertThat(response.isAiEnabled()).isFalse();
+    }
+
+    @Test
+    @DisplayName("SHIP인데 targetId(MMSI)가 9자리 숫자가 아니면 HIGH로 판정한다")
+    void shipWithInvalidMmsiFormatIsHigh() {
+        TargetEvent event = TargetEvent.builder()
+            .targetId("bad-id").targetType("SHIP").latitude(37.5).longitude(127.0)
+            .altitude(0.0).speed(10.0).status("DETECTED").build();
+
+        ThreatAnalysisDto.Response response = threatAnalysisService.analyze(event);
+
+        assertThat(response.getThreatLevel()).isEqualTo("HIGH");
     }
 
     @Test
