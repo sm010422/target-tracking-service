@@ -73,12 +73,19 @@ public class ThreatApprovalService {
         messagingTemplate.convertAndSend("/topic/approvals", ThreatApprovalDto.Response.from(approval));
     }
 
+    // recommendedOptionsJson이 추가되면서 @Lob 컬럼이 sitrep/decisionReason과 합쳐
+    // 3개가 됐는데, PostgreSQL에서 @Lob(Large Object)은 활성 트랜잭션 안에서만
+    // 스트리밍을 읽을 수 있다 -- 이 메서드들에 @Transactional이 없어서
+    // "Large Objects may not be used in auto-commit mode" 500 에러가 실제로
+    // 발생했다(2026-09-29). readOnly=true로 트랜잭션을 명시해서 해결.
+    @Transactional(readOnly = true)
     public List<ThreatApprovalDto.Response> listPending() {
         return repository.findByStatusOrderByRequestedAtDesc("PENDING").stream()
             .map(ThreatApprovalDto.Response::from)
             .toList();
     }
 
+    @Transactional(readOnly = true)
     public List<ThreatApprovalDto.Response> listAll() {
         return repository.findAllByOrderByRequestedAtDesc().stream()
             .map(ThreatApprovalDto.Response::from)
