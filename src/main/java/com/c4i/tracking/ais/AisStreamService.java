@@ -118,11 +118,13 @@ public class AisStreamService {
 
         @Override
         public void onOpen(WebSocket webSocket) {
+            log.info("[AisStream] onOpen (listener) 호출됨");
             webSocket.request(1);
         }
 
         @Override
         public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+            log.info("[AisStream] onText 호출됨: {}자, last={}", data.length(), last);
             buffer.append(data);
             webSocket.request(1);
             if (last) {
@@ -150,6 +152,7 @@ public class AisStreamService {
     private void handleMessage(String raw) {
         try {
             JsonNode message = objectMapper.readTree(raw);
+            log.info("[AisStream] 메시지 수신: type={}", message.path("MessageType").asText("?"));
             TargetEvent event = parser.parse(message);
             if (event != null) {
                 targetProducer.send(event);
