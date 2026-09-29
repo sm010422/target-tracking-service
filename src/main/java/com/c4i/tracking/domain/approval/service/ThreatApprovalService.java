@@ -4,6 +4,9 @@ import com.c4i.tracking.common.exception.ApprovalNotFoundException;
 import com.c4i.tracking.domain.approval.dto.ThreatApprovalDto;
 import com.c4i.tracking.domain.approval.entity.ThreatApproval;
 import com.c4i.tracking.domain.approval.repository.ThreatApprovalRepository;
+import com.c4i.tracking.domain.asset.AssetRecommendation;
+import com.c4i.tracking.domain.asset.AssetRecommendationService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -18,9 +21,11 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * "AI 판단 -> 사람 승인 -> 결정 기록"으로 이어지는 human-in-the-loop 루프.
- * ThreatAnalysisService가 HIGH/CRITICAL을 산출하면 여기로 승인 요청이 생성되고,
- * 담당자가 대시보드에서 승인/반려하면 그 결정이 감사 로그처럼 영구 기록된다.
+ * "AI 판단 -> 자산 추천 -> 사람 승인 -> 결정 기록"으로 이어지는 human-in-the-loop
+ * 루프. ThreatAnalysisService가 HIGH/CRITICAL을 산출하면 여기로 승인 요청이
+ * 생성되고, AssetRecommendationService가 계산한 top-3 요격 자산 옵션과 함께
+ * 담당자에게 제시된다. 담당자가 대시보드에서 옵션을 골라 승인하거나 반려하면
+ * 그 결정이 감사 로그처럼 영구 기록된다.
  */
 @Slf4j
 @Service
@@ -29,13 +34,16 @@ public class ThreatApprovalService {
 
     private static final Set<String> APPROVAL_REQUIRED_LEVELS = Set.of("HIGH", "CRITICAL");
     private static final Set<String> VALID_DECISIONS = Set.of("APPROVED", "REJECTED");
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private final ThreatApprovalRepository repository;
     private final SimpMessagingTemplate messagingTemplate;
     private final MeterRegistry meterRegistry;
+    private final AssetRecommendationService assetRecommendationService;
 
     @Transactional
-    public void createIfNeeded(String targetId, String targetType, String threatLevel, String sitrep) {
+    public void createIfNeeded(String targetId, String targetType, String threatLevel, String sitrep,
+                                double latitude, double longitude) {
         if (!APPROVAL_REQUIRED_LEVELS.contains(threatLevel)) return;
 
         // 같은 표적이 쿨다운 내 반복 분석/폴링으로 여러 번 HIGH/CRITICAL로 잡혀도
@@ -45,11 +53,14 @@ public class ThreatApprovalService {
             .isPresent();
         if (alreadyPending) return;
 
+        List<AssetRecommendation> options = assetRecommendationService.recommend(targetType, latitude, longitude);
+
         ThreatApproval approval = ThreatApproval.builder()
             .targetId(targetId)
             .targetType(targetType)
             .threatLevel(threatLevel)
             .sitrep(sitrep)
+            .recommendedOptionsJson(writeJson(options))
             .build();
         repository.save(approval);
 
@@ -84,8 +95,22 @@ public class ThreatApprovalService {
             throw new IllegalArgumentException("decision은 APPROVED 또는 REJECTED만 허용됩니다: " + decision);
         }
 
+        // MSS의 "3~4개 옵션 중 하나 클릭"과 동일하게, 승인은 추천된 옵션 중
+        // 실제로 하나를 골라야 성립한다 -- 반려는 옵션 선택 없이도 가능.
+        String requestedOption = request.getSelectedOption();
+        String selectedOption = null;
+        if ("APPROVED".equals(decision)) {
+            List<AssetRecommendation> options = readJson(approval.getRecommendedOptionsJson());
+            boolean validSelection = options.stream().anyMatch(o -> o.assetName().equals(requestedOption));
+            if (!validSelection) {
+                throw new IllegalArgumentException(
+                    "승인하려면 추천된 자산 옵션 중 하나를 selectedOption으로 지정해야 합니다: " + requestedOption);
+            }
+            selectedOption = requestedOption;
+        }
+
         var requestedAt = approval.getRequestedAt();
-        approval.decide(decision, request.getDecidedBy(), request.getReason());
+        approval.decide(decision, request.getDecidedBy(), request.getReason(), selectedOption);
         log.info("[ThreatApproval] 승인 결정: id={}, targetId={}, decision={}, decidedBy={}",
             id, approval.getTargetId(), decision, request.getDecidedBy());
 
@@ -104,5 +129,23 @@ public class ThreatApprovalService {
         ThreatApprovalDto.Response response = ThreatApprovalDto.Response.from(approval);
         messagingTemplate.convertAndSend("/topic/approvals", response);
         return response;
+    }
+
+    private String writeJson(List<AssetRecommendation> options) {
+        try {
+            return OBJECT_MAPPER.writeValueAsString(options);
+        } catch (Exception e) {
+            log.warn("[ThreatApproval] 추천 옵션 직렬화 실패, 빈 배열로 저장: {}", e.getMessage());
+            return "[]";
+        }
+    }
+
+    private List<AssetRecommendation> readJson(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return OBJECT_MAPPER.readerForListOf(AssetRecommendation.class).readValue(json);
+        } catch (Exception e) {
+            return List.of();
+        }
     }
 }

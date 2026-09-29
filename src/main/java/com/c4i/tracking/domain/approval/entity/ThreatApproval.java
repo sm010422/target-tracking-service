@@ -39,6 +39,16 @@ public class ThreatApproval {
     @Column(nullable = false)
     private String sitrep;         // 요청 시점의 SITREP 스냅샷
 
+    // AssetRecommendationService가 계산한 상위 3개 요격 자산 추천을 JSON 배열로
+    // 스냅샷 저장한다 (List<AssetRecommendation> 직렬화). 자산 카탈로그가 나중에
+    // 바뀌어도 과거 승인 기록이 "그 당시 뭘 추천했었는지" 그대로 남도록 하기 위함.
+    @Lob
+    private String recommendedOptionsJson;
+
+    // decide()에서 APPROVED일 때 recommendedOptionsJson 중 실제로 고른 자산명.
+    // MSS의 "3~4개 옵션 중 하나 클릭"에 대응 -- REJECTED면 null.
+    private String selectedOption;
+
     @Column(nullable = false)
     private String status;         // PENDING, APPROVED, REJECTED
 
@@ -53,19 +63,22 @@ public class ThreatApproval {
     private String decisionReason;
 
     @Builder
-    public ThreatApproval(String targetId, String targetType, String threatLevel, String sitrep) {
+    public ThreatApproval(String targetId, String targetType, String threatLevel, String sitrep,
+                           String recommendedOptionsJson) {
         this.targetId = targetId;
         this.targetType = targetType;
         this.threatLevel = threatLevel;
         this.sitrep = sitrep;
+        this.recommendedOptionsJson = recommendedOptionsJson;
         this.status = "PENDING";
         this.requestedAt = LocalDateTime.now();
     }
 
-    public void decide(String status, String decidedBy, String reason) {
+    public void decide(String status, String decidedBy, String reason, String selectedOption) {
         this.status = status;
         this.decidedBy = decidedBy;
         this.decisionReason = reason;
+        this.selectedOption = selectedOption;
         this.decidedAt = LocalDateTime.now();
     }
 }

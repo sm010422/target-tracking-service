@@ -102,7 +102,8 @@ class ThreatAnalysisServiceTest {
         threatAnalysisService.analyze(event);
 
         verify(threatApprovalService).createIfNeeded("T-3", "MISSILE", "CRITICAL",
-            "AI 분석 비활성화. GEMINI_API_KEY 환경변수 설정 후 재시작하면 LLM 기반 SITREP이 생성됩니다.");
+            "AI 분석 비활성화. GEMINI_API_KEY 환경변수 설정 후 재시작하면 LLM 기반 SITREP이 생성됩니다.",
+            37.5, 127.0);
         verifyNoInteractions(vectorStore, chatModel);
     }
 }

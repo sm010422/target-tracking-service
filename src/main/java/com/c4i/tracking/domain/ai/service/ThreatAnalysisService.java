@@ -120,7 +120,8 @@ public class ThreatAnalysisService {
     public ThreatAnalysisDto.Response analyze(TargetEvent event) {
         ThreatAnalysisDto.Response response = doAnalyze(event);
         threatApprovalService.createIfNeeded(
-            response.getTargetId(), response.getTargetType(), response.getThreatLevel(), response.getSitrep());
+            response.getTargetId(), response.getTargetType(), response.getThreatLevel(), response.getSitrep(),
+            event.getLatitude(), event.getLongitude());
         return response;
     }
 
