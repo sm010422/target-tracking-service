@@ -10,13 +10,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import org.springframework.web.socket.BinaryMessage;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.WebSocketClient;
 import org.springframework.web.socket.client.standard.StandardWebSocketClient;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
+import org.springframework.web.socket.handler.AbstractWebSocketHandler;
 
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -26,13 +28,13 @@ import java.util.concurrent.TimeUnit;
  * 흘려보낸다. AdsbFiPollingService(ADS-B, REST 폴링)와 같은 자리 -- 이 서비스가
  * TargetProducer로 발행하는 순간부터는 기존 파이프라인이 그대로 처리한다.
  *
- * 처음엔 JDK 내장 java.net.http.WebSocket으로 구현했는데, 연결·구독(onOpen, sendText)은
- * 성공하고 로그도 남는데 서버가 보내는 메시지에 대해 onText 콜백이 단 한 번도 호출되지
- * 않는 문제를 실측으로 확인했다(같은 API 키/구독 메시지로 만든 별도 Node.js 스크립트는
- * 1초 안에 정상 수신). aisstream.io가 SubscriptionConfirmation에서 CompressionEnabled:true를
- * 명시하는 걸 보면 permessage-deflate 확장 관련 호환성 문제로 추정되나 근본 원인을 더
- * 파고들기보다, 이 앱이 대시보드 STOMP 브로드캐스트로 이미 실전 검증된 Spring
- * StandardWebSocketClient(Tomcat Jakarta WebSocket 구현)로 교체하는 쪽을 택했다.
+ * 처음엔 JDK 내장 java.net.http.WebSocket + onText만으로 구현했는데 아무 메시지도
+ * 안 들어왔다. Spring StandardWebSocketClient + TextWebSocketHandler로 바꾼 뒤에야
+ * 진짜 원인이 드러났다: 서버가 CloseStatus 1003("Binary messages not supported")으로
+ * 매번 연결을 끊고 있었다 -- **aisstream.io는 JSON을 텍스트가 아니라 바이너리 프레임으로
+ * 보낸다.** JDK 버전은 onText만 있고 onBinary를 안 다뤄서 기본 구현(조용히 버림)에
+ * 흡수됐던 것이고, TextWebSocketHandler는 바이너리 프레임 자체를 거부하는 게 차이였다.
+ * 지금은 handleBinaryMessage에서 UTF-8로 디코딩해서 처리한다.
  *
  * targetType="SHIP"으로 발행하므로 ThreatAnalysisService의 규칙 기반 등급이 그대로
  * 적용된다. AIRCRAFT 폭주로 Gemini 쿼터를 다 써버렸던 사건과 같은 이유로 SHIP도
@@ -108,7 +110,7 @@ public class AisStreamService {
             """.formatted(apiKey, MIN_LAT, MIN_LON, MAX_LAT, MAX_LON).strip();
     }
 
-    private class AisHandler extends TextWebSocketHandler {
+    private class AisHandler extends AbstractWebSocketHandler {
         @Override
         public void afterConnectionEstablished(WebSocketSession session) throws Exception {
             session.sendMessage(new TextMessage(buildSubscribeMessage()));
@@ -117,9 +119,18 @@ public class AisStreamService {
 
         @Override
         protected void handleTextMessage(WebSocketSession session, TextMessage message) {
-            // TextWebSocketHandler에 이미 handleMessage(session, WebSocketMessage)가 상속돼
-            // 있어서, 이름이 같은 바깥 클래스 메서드를 호출하려면 명시적으로 한정해야 한다.
             AisStreamService.this.handleMessage(message.getPayload());
+        }
+
+        /**
+         * aisstream.io는 JSON을 텍스트가 아니라 **바이너리 프레임**으로 보낸다(실측으로
+         * 확인 -- TextWebSocketHandler를 썼을 때 서버가 CloseStatus 1003 "Binary messages
+         * not supported"로 매번 연결을 끊었다). UTF-8로 디코딩하면 동일한 JSON 텍스트다.
+         */
+        @Override
+        protected void handleBinaryMessage(WebSocketSession session, BinaryMessage message) {
+            String payload = StandardCharsets.UTF_8.decode(message.getPayload()).toString();
+            AisStreamService.this.handleMessage(payload);
         }
 
         @Override
