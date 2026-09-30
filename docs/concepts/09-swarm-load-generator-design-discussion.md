@@ -1,6 +1,6 @@
-# 개념 정리 — "서버다운 부하"를 어떻게 만들 것인가 (설계 논의, 구현 전)
+# 개념 정리 — "서버다운 부하"를 어떻게 만들 것인가 (설계→구현→배포 중 장애까지)
 
-지금까지는 외부 데이터(ADS-B/AIS)를 우리가 끌어오는 쪽이라, 정작 이 서버가 "요청을 받아 처리하는 서버"로서 부하를 받는 일이 거의 없었다. 이걸 개선하고 싶다는 논의에서 나온 방향 전환 기록. **아직 구현 전 — 다음 세션에서 이어서 만들 설계 문서.**
+지금까지는 외부 데이터(ADS-B/AIS)를 우리가 끌어오는 쪽이라, 정작 이 서버가 "요청을 받아 처리하는 서버"로서 부하를 받는 일이 거의 없었다. 이걸 개선하고 싶다는 논의에서 시작해서, DMZ 드론 스웜 시나리오를 구현·배포하고, 그 과정에서 실제로 클러스터 자원 한계를 건드린 장애까지 겪은 전체 기록.
 
 ## 1. 처음 생각한 방향 — 동시 접속자 부하 테스트, 그리고 기각한 이유
 
@@ -51,14 +51,50 @@ public void simulate(int rounds) {
 - 표적 수가 많아질 걸 감안하면, 매 틱마다 랜덤 좌표를 새로 뽑는 지금 구조 대신 표적별 상태를 어딘가(메모리 Map, 혹은 Redis — 이미 클러스터에 있음)에 유지하는 구조로 바뀌어야 한다.
 - 약간의 랜덤 방위각 드리프트를 주면 완전 직선 비행보다 자연스러워 보일 것(다만 이건 시각적 디테일이라 우선순위는 낮음).
 
-## 5. 아직 안 정한 것
+## 5. 실제로 정한 것 — `DmzSwarmSimulator` 구현
 
-- 표적 수를 얼마나 올릴지(클러스터 자원 여유를 보면서 단계적으로 — 워커 노드 메모리 여유가 넉넉하지 않다는 걸 모니터링 스택 만들 때 이미 확인함)
-- 상태를 어디에 유지할지(인메모리 vs Redis) — 인메모리는 파드 재시작 시 초기화되지만 구현이 단순하고, Redis는 이미 클러스터에 떠 있어서 재사용 가능
-- "포화 공격 시나리오"를 실행/중지하는 API를 기존 `SimulatorController`(`/api/simulator/run`)에 얹을지, 별도 엔드포인트로 분리할지
+`src/main/java/com/c4i/tracking/simulator/DmzSwarmSimulator.java`로 구현했다. 설계 논의에서 열어뒀던 질문들은 이렇게 정리됐다:
+
+- **표적 수/지속시간**: API 파라미터로 뺐다(`count` 기본 20·최대 200, `durationSec` 기본 90·최대 300) — 클러스터 자원을 보면서 호출 시점에 단계적으로 올릴 수 있게. 고정값으로 박아두지 않은 이유는 바로 이 문서 7번 항목(장애)에서 드러난다.
+- **상태 유지 위치**: 인메모리로 결정. Redis도 고려했지만, 시나리오가 최대 300초짜리 유한 이벤트라 파드 재시작으로 상태가 날아가는 게 실질적 문제가 안 되고, Redis 직렬화 왕복 비용을 붙일 이유가 없었다.
+- **API 분리**: 기존 `SimulatorController`(`/api/simulator/*`)에 `/swarm` 엔드포인트로 얹었다 — 새 컨트롤러를 만들 만큼 성격이 다르지 않다고 판단.
+- **이동 공식**: destination point formula(위치+방위각+거리 → 다음 위치)를 `DmzSwarmSimulator.destinationPoint()`로 순수 함수 분리해서, 스케줄러 없이 단위 테스트 가능하게 했다(`DmzSwarmSimulatorTest`, 5개 케이스 — 정남향/정동향 이동, 거리 비례, 제자리, 중복 실행 방지).
+- **스폰 위치**: 철원-연천 축선 인근(38.20~38.30N, 127.05~127.35E, 정확한 군사분계선 좌표가 아니라 상징적 선택), 기본 방위 180도(정남)에서 ±20도 흩어지게 스폰해서 대형을 이룬 것처럼 보이게 했다.
+- **"상시 생성기 아님" 요구사항**: `AtomicBoolean running`으로 중복 실행을 막고, 틱 카운트가 `durationSec / 2초`에 도달하면 스스로 `ScheduledFuture`를 취소하고 종료한다 — 버튼을 눌러야 시작되는 유한 이벤트.
+
+프론트엔드(`c4i-dashboard-frontend`)에는 기존 "▶ 시뮬레이션 실행" 옆에 "🚁 DMZ 스웜" 버튼을 추가해서 `POST /api/simulator/swarm?count=20&durationSec=90`을 호출하게 했다.
+
+## 6. 배포 후 실측 검증
+
+배포하고 나서 실제로 남하하는지 API로 직접 확인했다:
+
+```
+DMZ-SWARM-01 38.21054 127.24930 ...
+DMZ-SWARM-01 38.21023 127.24940 ...  (2초 뒤)
+DMZ-SWARM-01 38.20991 127.24950 ...  (또 2초 뒤)
+```
+
+위도가 틱마다 일관되게 감소(남하) — `DroneSimulator`처럼 매번 무관한 랜덤 좌표가 아니라 실제로 이전 위치에서 이어지는 궤적이라는 걸 숫자로 확인했다. 브라우저에서도 DMZ 라인 바로 아래에 남쪽을 향한 삼각형 마커가 떴고 콘솔 에러도 없었다.
+
+## 7. 장애 — 스웜 테스트가 다른 파드까지 Unhealthy로 만든 사건 (2026-09-30)
+
+검증 직후 Headlamp에서 이벤트 7건이 Unhealthy로 떴다 — `prometheus`, `postgres`, `kube-state-metrics`, `target-tracking-service`(신·구 파드 둘 다) 전부 liveness/readiness probe 타임아웃.
+
+**진단**: `kubectl get pods -o wide`로 배치를 보니 Unhealthy로 뜬 파드가 전부 **같은 노드(`k3s-worker1`)**에 몰려 있었다. 이 노드는 `Headlamp-Kubernetes-Dashboard.md`에서 이미 "여유 ~400MB" 수준으로 가장 빠듯하다고 확인했던 곳인데(당시 측정 61~72%), 지금은 81%까지 올라가 있었다. 스웜 테스트를 두 번 연달아 돌리면서(curl로 10대, 버튼으로 20대) `target-tracking-service`에 순간 CPU/메모리 부하가 튀었고, **같은 노드를 쓰는 다른 파드들까지 kubelet의 health check 응답이 늦어져서** 무더기로 Unhealthy로 잡혔다 — 개별 파드 버그가 아니라 노드 단위 자원 경합이었다.
+
+**현재 상태**: 재시작 횟수(`RESTARTS`)는 전부 0 — 크래시 없이 자연 복구됨. `actuator/health/readiness`와 `/api/targets` 둘 다 재확인해서 `200 OK` 정상 확인.
+
+**의미**: 이건 버그라기보다 "1번 항목에서 원했던 것"이 실제로 증명된 사건에 가깝다 — 대량 표적 생성기가 진짜로 클러스터 자원 한계를 건드릴 만큼의 부하를 만든다는 뜻. 동시에 "지금 기본값(20대)조차 가장 빠듯한 노드엔 부담"이라는 한계도 같이 드러났다.
+
+**당장은 고치지 않기로 함** — 자연 복구됐고 데이터 유실도 없어서, 이번엔 원인만 기록해두고 다음에 스웜 규모를 더 키우려 할 때 참고하기로 했다. 나중에 손볼 후보:
+
+1. `target-tracking-service` readiness probe `failureThreshold`를 순간 스파이크에 덜 민감하게 완화
+2. 틱마다 드론 전체를 한 번에 Kafka로 쏘는 대신 살짝 스태거링해서 순간 부하 자체를 완화
+3. `postgres`/`kube-state-metrics`처럼 무거운 걸 worker1에서 worker2로 옮겨 분산(단, worker2도 여유가 크지 않아 효과는 제한적일 수 있음)
 
 ## 관련 문서
 
 - `docs/concepts/04-adsb-fi-live-feed-integration.md` — 순간이동 문제를 실제 데이터로 처음 해결했던 사례
-- `docs/concepts/07-gemini-quota-incident-and-on-demand-ai-analysis.md` — 대량 유입 시 AI 분석을 게이팅하는 기존 로직, 이번 부하 테스트의 실질적 검증 대상
+- `docs/concepts/07-gemini-quota-incident-and-on-demand-ai-analysis.md` — 대량 유입 시 AI 분석을 게이팅하는 기존 로직, DRONE 타입이 타는 경로
 - `docs/concepts/08-external-data-source-architecture.md` — 왜 외부 API 쪽으로 부하를 키우면 안 되는지(레이트리밋)의 배경
+- `k3s-msa-infrastructure/docs/Headlamp-Kubernetes-Dashboard.md` — worker1 자원 여유를 처음 측정했던 문서, 이번 장애 진단에 그대로 쓰임
