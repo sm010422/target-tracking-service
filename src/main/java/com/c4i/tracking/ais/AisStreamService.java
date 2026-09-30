@@ -19,6 +19,8 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.AbstractWebSocketHandler;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -39,6 +41,15 @@ import java.util.concurrent.TimeUnit;
  * targetType="SHIP"으로 발행하므로 ThreatAnalysisService의 규칙 기반 등급이 그대로
  * 적용된다. AIRCRAFT 폭주로 Gemini 쿼터를 다 써버렸던 사건과 같은 이유로 SHIP도
  * warrantsAiAnalysis()에서 무조건 분석하지 않고 HIGH/CRITICAL일 때만 분석한다.
+ *
+ * 운영 중 "좀비 연결" 버그를 하나 겪었다 -- afterConnectionClosed/handleTransportError
+ * 둘 다 안 불린 채로, JVM 입장에서는 세션이 여전히 "열려" 있는데 16시간 넘게 메시지가
+ * 한 건도 안 들어온 상태가 됐다(선박 데이터 0건, [AisStream] 로그도 0건). TCP 연결이
+ * close 프레임 없이 죽는 경우(중간 프록시/NAT idle timeout 등) Java WebSocket 클라이언트가
+ * 이걸 스스로 감지할 방법이 없어서 생기는 문제 -- 재연결 로직 자체는 멀쩡했지만 애초에
+ * "연결이 죽었다"는 신호가 한 번도 발생하지 않아 트리거될 일이 없었다. 그래서 마지막
+ * 메시지 수신 시각을 추적하는 워치독을 추가했다: 일정 시간 이상 조용하면 세션을
+ * 죽었다고 간주하고 강제로 재연결한다.
  */
 @Slf4j
 @Component
@@ -56,6 +67,11 @@ public class AisStreamService {
 
     private static final long RECONNECT_DELAY_SEC = 10;
 
+    // 이 권역에서 정상 상태라면 몇 분 안에 최소 한 건은 PositionReport가 들어온다 --
+    // 그보다 길게 조용하면 정상 트래픽 공백이 아니라 연결이 죽었다고 판단한다.
+    private static final long IDLE_TIMEOUT_SEC = 120;
+    private static final long WATCHDOG_INTERVAL_SEC = 30;
+
     private final TargetProducer targetProducer;
     private final AisMessageParser parser;
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -70,6 +86,11 @@ public class AisStreamService {
 
     private volatile boolean shuttingDown = false;
 
+    // 현재 유효한 세션 -- 워치독이 강제로 갈아치운 뒤에는 옛 세션의 콜백(뒤늦게 불리더라도)이
+    // 중복 재연결을 예약하지 못하도록 신원 비교(==)에 쓴다.
+    private volatile WebSocketSession session;
+    private volatile Instant lastMessageAt = Instant.now();
+
     @PostConstruct
     public void start() {
         if (!enabled) return;
@@ -78,6 +99,8 @@ public class AisStreamService {
             return;
         }
         connect();
+        reconnectExecutor.scheduleAtFixedRate(
+            this::checkIdle, WATCHDOG_INTERVAL_SEC, WATCHDOG_INTERVAL_SEC, TimeUnit.SECONDS);
     }
 
     @PreDestroy
@@ -88,12 +111,39 @@ public class AisStreamService {
 
     private void connect() {
         webSocketClient.execute(new AisHandler(), STREAM_URL)
-            .whenComplete((session, ex) -> {
+            .whenComplete((newSession, ex) -> {
                 if (ex != null) {
                     log.warn("[AisStream] 연결 실패, {}초 후 재시도: {}", RECONNECT_DELAY_SEC, ex.getMessage());
                     scheduleReconnect();
+                } else {
+                    session = newSession;
+                    lastMessageAt = Instant.now();
                 }
             });
+    }
+
+    /**
+     * 정상적인 close/error 콜백이 아예 안 불리는 좀비 연결을 잡아낸다. 마지막 메시지
+     * 수신 후 IDLE_TIMEOUT_SEC 넘게 조용하면 현재 세션을 버리고 새로 연결한다 -- 옛
+     * 세션은 session 필드에서 먼저 떼어낸 뒤 close()하므로, 그 세션의 콜백이 나중에
+     * 뒤늦게 불려도(신원이 이미 안 맞아서) 중복 재연결로 이어지지 않는다.
+     */
+    private void checkIdle() {
+        if (shuttingDown) return;
+        WebSocketSession current = session;
+        if (current == null) return; // 이미 재연결 대기 중 -- 워치독이 개입할 필요 없음
+
+        long idleSec = Duration.between(lastMessageAt, Instant.now()).toSeconds();
+        if (idleSec < IDLE_TIMEOUT_SEC) return;
+
+        log.warn("[AisStream] {}초간 메시지 수신 없음 -- 좀비 연결로 판단, 강제 재연결", idleSec);
+        session = null;
+        try {
+            current.close();
+        } catch (Exception e) {
+            // 이미 죽어있는 세션이라 close()도 실패할 수 있다 -- 무시하고 아래에서 새로 연결
+        }
+        connect();
     }
 
     private void scheduleReconnect() {
@@ -134,19 +184,28 @@ public class AisStreamService {
         }
 
         @Override
-        public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        public void afterConnectionClosed(WebSocketSession closedSession, CloseStatus status) {
             log.warn("[AisStream] 연결 종료 ({}), 재연결 예약", status);
-            scheduleReconnect();
+            // 워치독이 이미 이 세션을 버리고 새로 연결했다면(session != closedSession),
+            // 여기서 또 재연결을 예약하면 중복 연결로 이어진다 -- 현재 세션일 때만 처리.
+            if (closedSession == session) {
+                session = null;
+                scheduleReconnect();
+            }
         }
 
         @Override
-        public void handleTransportError(WebSocketSession session, Throwable exception) {
+        public void handleTransportError(WebSocketSession errorSession, Throwable exception) {
             log.warn("[AisStream] 스트림 에러, 재연결 예약: {}", exception.getMessage());
-            scheduleReconnect();
+            if (errorSession == session) {
+                session = null;
+                scheduleReconnect();
+            }
         }
     }
 
     private void handleMessage(String raw) {
+        lastMessageAt = Instant.now();
         try {
             JsonNode message = objectMapper.readTree(raw);
             TargetEvent event = parser.parse(message);
