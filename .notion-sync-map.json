@@ -9,6 +9,7 @@
   "docs/concepts/06-heading-multi-region-and-adsb-coverage-limits.md": "3e250b17-ecd1-81a3-b892-f920cec6439c",
   "docs/concepts/07-gemini-quota-incident-and-on-demand-ai-analysis.md": "3e250b17-ecd1-815b-855d-f17562760709",
   "docs/concepts/08-external-data-source-architecture.md": "3eb50b17-ecd1-811d-9735-d7387d46e32f",
+  "docs/concepts/09-swarm-load-generator-design-discussion.md": "3eb50b17-ecd1-81d7-bc17-f17af44903d3",
   "docs/dashboard-data-and-ai-audit.md": "3e250b17-ecd1-8185-96dd-c11809db81a2",
   "docs/dev-setup.md": "3e250b17-ecd1-8119-b162-d2fe305c7b09",
   "docs/observability.md": "3e350b17-ecd1-8114-8638-f1b525590d75",
